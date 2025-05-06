@@ -1,19 +1,28 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut
 import openrouteservice
 import time
 
 app = Flask(__name__)
 CORS(app)
 ORS_API_KEY = '5b3ce3597851110001cf6248e3e8ef34ed2b4788a48fd77f04a52ca1'
+geolocator = Nominatim(user_agent="ships_app", timeout=10)
 
-def try_geocode(geolocator, address_parts):
-    for addr in address_parts:
-        loc = geolocator.geocode(addr, timeout=10)
-        if loc:
-            return loc
-        time.sleep(1)
+def try_geocode(address_list):
+    # Thử lần lượt các format địa chỉ từ chi tiết đến tổng quát
+    for addr in address_list:
+        try:
+            print(f"Thử geocode: {addr}")
+            location = geolocator.geocode(addr)
+            if location:
+                print(f"-> Tìm được: {location.latitude}, {location.longitude}")
+                return location
+        except GeocoderTimedOut:
+            continue
+        except Exception as e:
+            print(f"Lỗi geocoding: {e}")
     return None
 
 def clean_name(name):
@@ -24,41 +33,47 @@ def clean_name(name):
             return name[len(prefix):]
     return name
 
+def build_variants(addr):
+    # Tách các phần, loại bỏ lặp Việt Nam
+    parts = [p.strip() for p in addr.replace('Việt Nam', '').split(',') if p.strip()]
+    variants = []
+    # Đầy đủ
+    variants.append(', '.join(parts + ['Việt Nam']))
+    # Bỏ xã/phường
+    if len(parts) > 2:
+        variants.append(', '.join(parts[1:] + ['Việt Nam']))
+    # Chỉ tỉnh/thành, quận/huyện
+    if len(parts) > 1:
+        variants.append(', '.join(parts[-2:] + ['Việt Nam']))
+    # Chỉ tỉnh/thành
+    if len(parts) > 0:
+        variants.append(parts[-1] + ', Việt Nam')
+    return variants
+
 @app.route('/api/calc-distance', methods=['POST'])
 def calc_distance():
     try:
         data = request.json
-        if isinstance(data.get('sender'), dict):
-            sender = data['sender']
-            receiver = data['receiver']
-            sender_parts = [
-                f"{clean_name(sender.get('ward', ''))}, {clean_name(sender.get('district', ''))}, {clean_name(sender.get('province', ''))}, Việt Nam",
-                f"{clean_name(sender.get('district', ''))}, {clean_name(sender.get('province', ''))}, Việt Nam",
-                f"{clean_name(sender.get('province', ''))}, Việt Nam"
-            ]
-            receiver_parts = [
-                f"{clean_name(receiver.get('ward', ''))}, {clean_name(receiver.get('district', ''))}, {clean_name(receiver.get('province', ''))}, Việt Nam",
-                f"{clean_name(receiver.get('district', ''))}, {clean_name(receiver.get('province', ''))}, Việt Nam",
-                f"{clean_name(receiver.get('province', ''))}, Việt Nam"
-            ]
-        else:
-            sender_parts = [data['sender']]
-            receiver_parts = [data['receiver']]
+        sender = data['sender'][0] if isinstance(data['sender'], list) else data['sender']
+        receiver = data['receiver'][0] if isinstance(data['receiver'], list) else data['receiver']
 
-        print('Địa chỉ thử cho sender:', sender_parts)
-        print('Địa chỉ thử cho receiver:', receiver_parts)
+        print('Địa chỉ thử cho sender:', sender)
+        print('Địa chỉ thử cho receiver:', receiver)
 
-        geolocator = Nominatim(user_agent="my_shipping_app")
-        location_sender = try_geocode(geolocator, sender_parts)
-        location_receiver = try_geocode(geolocator, receiver_parts)
+        sender_variants = build_variants(sender)
+        receiver_variants = build_variants(receiver)
 
-        if not location_sender or not location_receiver:
-            return jsonify({'error': 'Không tìm thấy tọa độ!'}), 400
+        sender_location = try_geocode(sender_variants)
+        receiver_location = try_geocode(receiver_variants)
+
+        if not sender_location or not receiver_location:
+            print("Không tìm được tọa độ cho sender hoặc receiver.")
+            return jsonify({'error': 'Không tìm được tọa độ cho địa chỉ gửi hoặc nhận!'}), 400
 
         client = openrouteservice.Client(key=ORS_API_KEY)
         coords = [
-            [location_sender.longitude, location_sender.latitude],
-            [location_receiver.longitude, location_receiver.latitude]
+            [sender_location.longitude, sender_location.latitude],
+            [receiver_location.longitude, receiver_location.latitude]
         ]
         try:
             route = client.directions(coordinates=coords, profile='driving-car')
