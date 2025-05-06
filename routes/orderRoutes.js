@@ -1,0 +1,198 @@
+const express = require('express');
+const router = express.Router();
+const Order = require('../models/Order');
+const Warehouse = require('../models/Warehouse');
+const UserAddress = require('../models/UserAddress');
+const OrderItem = require('../models/OrderItem');
+const Coupon = require('../models/Coupon');
+const User = require('../models/User');
+
+router.post('/', async (req, res) => {
+  try {
+    const {
+      warehouse_id,
+      pickup_address_id,
+      delivery_address_id,
+      weight,
+      dimensions,
+      order_items,
+      service_type,
+      coupon_id,
+      service_fee,
+      is_suburban,
+      estimate_time,
+      pickup_time_suggestion,
+      payment_method,
+      payment_status
+    } = req.body;
+
+    if (!['customer', 'admin', 'staff'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Không có quyền tạo đơn hàng.' });
+    }
+
+    let customer_id;
+    if (req.user.role === 'customer') {
+      customer_id = req.user.user_id;
+    } else {
+      customer_id = req.body.customer_id;
+      if (!customer_id) {
+        return res.status(400).json({ error: 'Vui lòng cung cấp customer_id.' });
+      }
+      const customer = await User.findOne({ user_id: customer_id, role: 'customer' });
+      if (!customer) {
+        return res.status(404).json({ error: 'Customer không tồn tại.' });
+      }
+    }
+
+    const warehouse = await Warehouse.findOne({ warehouse_id });
+    if (!warehouse) {
+      return res.status(404).json({ error: 'Kho không tồn tại.' });
+    }
+    if (warehouse.current_stock >= warehouse.capacity) {
+      return res.status(400).json({ error: 'Kho đã đầy.' });
+    }
+
+    const pickupAddress = await UserAddress.findOne({ address_id: pickup_address_id });
+    const deliveryAddress = await UserAddress.findOne({ address_id: delivery_address_id });
+    if (!pickupAddress || !deliveryAddress) {
+      return res.status(404).json({ error: 'Địa chỉ không tồn tại.' });
+    }
+
+    let total_fee = service_fee || 0;
+    if (coupon_id) {
+      const coupon = await Coupon.findOne({ coupon_id });
+      if (!coupon) {
+        return res.status(404).json({ error: 'Coupon không tồn tại.' });
+      }
+      if (!coupon.is_active || coupon.uses_count >= coupon.max_uses) {
+        return res.status(400).json({ error: 'Coupon không khả dụng.' });
+      }
+      if (total_fee < coupon.min_order_amount) {
+        return res.status(400).json({ error: 'Giá trị đơn hàng không đủ để áp dụng coupon.' });
+      }
+      if (coupon.discount_type === 'percent') {
+        total_fee -= total_fee * (coupon.discount_value / 100);
+      } else {
+        total_fee -= coupon.discount_value;
+      }
+      coupon.uses_count += 1;
+      await coupon.save();
+    }
+
+    const order = new Order({
+      order_id: `order_${Date.now()}`,
+      coupon_id,
+      customer_id,
+      warehouse_id,
+      pickup_address_id,
+      pickup_address: {
+        street: pickupAddress.street,
+        ward: pickupAddress.ward,
+        district: pickupAddress.district,
+        city: pickupAddress.city
+      },
+      delivery_address_id,
+      delivery_address: {
+        street: deliveryAddress.street,
+        ward: deliveryAddress.ward,
+        district: deliveryAddress.district,
+        city: deliveryAddress.city
+      },
+      weight,
+      dimensions,
+      service_type,
+      total_fee,
+      service_fee: service_fee || 0,
+      is_suburban: is_suburban || false,
+      estimate_time,
+      pickup_time_suggestion,
+      payment_method,
+      payment_status: payment_status || 'pending',
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    const savedOrderItems = [];
+    for (const item of order_items) {
+      const orderItem = new OrderItem({
+        orderitem_id: `orderitem_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+        order_id: order.order_id,
+        description: item.description,
+        quantity: item.quantity,
+        item_type: item.item_type
+      });
+      await orderItem.save();
+      savedOrderItems.push({
+        orderitem_id: orderItem.orderitem_id,
+        description: item.description,
+        quantity: item.quantity,
+        item_type: item.item_type,
+        status: item.status || 'pending'
+      });
+    }
+
+    order.order_items = savedOrderItems;
+    await order.save();
+
+    warehouse.current_stock += 1;
+    await warehouse.save();
+    res.json({ message: 'Tạo đơn hàng thành công.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/', async (req, res) => {
+  try {
+    const { customer_id, shipper_id } = req.query;
+    const query = {};
+    if (req.user.role === 'customer') {
+      query.customer_id = req.user.user_id;
+    } else if (req.user.role === 'shipper') {
+      query.shipper_id = req.user.user_id;
+    } else if (req.user.role !== 'admin' && req.user.role !== 'staff') {
+      return res.status(403).json({ error: 'Không có quyền truy cập.' });
+    }
+    if (customer_id && (req.user.role === 'admin' || req.user.role === 'staff')) query.customer_id = customer_id;
+    if (shipper_id && (req.user.role === 'admin' || req.user.role === 'staff')) {
+      const shipper = await User.findOne({ user_id: shipper_id, role: 'shipper' });
+      if (!shipper) {
+        return res.status(404).json({ error: 'Shipper không tồn tại.' });
+      }
+      query.shipper_id = shipper_id;
+      query.warehouse_id = shipper.warehouse_id;
+    }
+    const orders = await Order.find(query);
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.put('/:order_id/status', async (req, res) => {
+  try {
+    const { order_id } = req.params;
+    const { status } = req.body;
+    if (!status) {
+      return res.status(400).json({ error: 'Vui lòng cung cấp status.' });
+    }
+    const order = await Order.findOne({ order_id });
+    if (!order) {
+      return res.status(404).json({ error: 'Đơn hàng không tồn tại.' });
+    }
+    if (req.user.role === 'shipper' && order.shipper_id !== req.user.user_id) {
+      return res.status(403).json({ error: 'Không có quyền cập nhật trạng thái cho đơn hàng này.' });
+    }
+    order.status = status;
+    if (status === 'delivered') {
+      order.delivered_at = new Date();
+    }
+    order.updated_at = new Date();
+    await order.save();
+    res.json({ message: 'Cập nhật trạng thái đơn hàng thành công.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+module.exports = router;
