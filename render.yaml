@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: ships-backend
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        value: mongodb+srv://nndminh03:psrMirsKkv19Yia6@ships-cluster.guijyap.mongodb.net/ships_db
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false 

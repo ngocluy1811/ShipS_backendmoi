@@ -13,7 +13,7 @@ const { initSocket } = require('./socket');
 mongoose.set('strictQuery', true);
 
 // Kết nối đến MongoDB Atlas
-mongoose.connect('mongodb+srv://nndminh03:psrMirsKkv19Yia6@ships-cluster.guijyap.mongodb.net/ships_db', {
+mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://nndminh03:psrMirsKkv19Yia6@ships-cluster.guijyap.mongodb.net/ships_db', {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
