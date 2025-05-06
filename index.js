@@ -40,16 +40,13 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://nndminh03:psrMirsKkv1
 })
 .catch(err => console.error('MongoDB Atlas connection error:', err));
 
-// Kết nối đến MongoDB local (giữ lại để backup)
-const localConnection = mongoose.createConnection('mongodb://127.0.0.1:27017/ships_db');
-localConnection.on('connected', () => console.log('MongoDB Local connected'));
-localConnection.on('error', err => console.error('MongoDB Local connection error:', err));
+// Kết nối đến MongoDB local (chỉ dùng khi phát triển local)
+// const localConnection = mongoose.createConnection('mongodb://127.0.0.1:27017/ships_db');
+// localConnection.on('connected', () => console.log('MongoDB Local connected'));
+// localConnection.on('error', err => console.error('MongoDB Local connection error:', err));
 
-// Export connections để sử dụng trong các models
-module.exports = {
-  mongoose,
-  localConnection
-};
+// Export connections để sử dụng trong các models (chỉ export mongoose cho Atlas)
+module.exports = mongoose;
 
 app.use(express.json());
 app.use(cors({
