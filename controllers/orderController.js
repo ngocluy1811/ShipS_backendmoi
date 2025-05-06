@@ -185,6 +185,7 @@ router.post('/calculate-shipping-fee', async (req, res) => {
 // Tạo đơn hàng
 router.post('/', async (req, res) => {
   try {
+    console.log('Order create body:', JSON.stringify(req.body, null, 2));
     const {
       warehouse_id,
       pickup_address_id,
@@ -230,6 +231,32 @@ router.post('/', async (req, res) => {
     const deliveryAddress = await UserAddress.findOne({ address_id: delivery_address_id });
     if (!pickupAddress || !deliveryAddress) {
       return res.status(404).json({ error: 'Địa chỉ không tồn tại.' });
+    }
+
+    // Nếu thiếu trường nào ở delivery_address, tự động lấy từ deliveryAddress (UserAddress)
+    let deliveryData = { ...req.body.delivery_address };
+    ['name', 'phone', 'street', 'ward', 'district', 'city'].forEach(f => {
+      if (!deliveryData[f] || !deliveryData[f].trim()) {
+        deliveryData[f] = deliveryAddress[f] || '';
+      }
+    });
+    // Nếu vẫn còn thiếu trường nào, trả về lỗi
+    const missingDeliveryFields = ['name', 'phone', 'street', 'ward', 'district', 'city'].filter(f => !deliveryData[f] || !deliveryData[f].trim());
+    if (missingDeliveryFields.length > 0) {
+      console.error('Thiếu thông tin người nhận:', missingDeliveryFields);
+      return res.status(400).json({ error: 'Thiếu thông tin người nhận: ' + missingDeliveryFields.join(', ') });
+    }
+    // Tương tự cho pickup_address
+    let pickupData = { ...req.body.pickup_address };
+    ['name', 'phone', 'street', 'ward', 'district', 'city'].forEach(f => {
+      if (!pickupData[f] || !pickupData[f].trim()) {
+        pickupData[f] = pickupAddress[f] || '';
+      }
+    });
+    const missingPickupFields = ['name', 'phone', 'street', 'ward', 'district', 'city'].filter(f => !pickupData[f] || !pickupData[f].trim());
+    if (missingPickupFields.length > 0) {
+      console.error('Thiếu thông tin người gửi:', missingPickupFields);
+      return res.status(400).json({ error: 'Thiếu thông tin người gửi: ' + missingPickupFields.join(', ') });
     }
 
     const distance = await calculateDistance(pickupAddress, deliveryAddress);
@@ -282,19 +309,9 @@ router.post('/', async (req, res) => {
       customer_id,
       warehouse_id,
       pickup_address_id,
-      pickup_address: {
-        street: pickupAddress.street,
-        ward: pickupAddress.ward,
-        district: pickupAddress.district,
-        city: pickupAddress.city
-      },
+      pickup_address: pickupData,
       delivery_address_id,
-      delivery_address: {
-        street: deliveryAddress.street,
-        ward: deliveryAddress.ward,
-        district: deliveryAddress.district,
-        city: deliveryAddress.city
-      },
+      delivery_address: deliveryData,
       weight,
       dimensions,
       service_type,

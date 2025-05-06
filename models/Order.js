@@ -9,6 +9,8 @@ const orderSchema = new mongoose.Schema({
   group_id: { type: String, ref: 'GroupOrder' }, // Đảm bảo tham chiếu đúng
   pickup_address_id: { type: String, ref: 'UserAddress' },
   pickup_address: {
+    name: String,
+    phone: String,
     street: String,
     ward: String,
     district: String,
@@ -16,6 +18,8 @@ const orderSchema = new mongoose.Schema({
   },
   delivery_address_id: { type: String, ref: 'UserAddress' },
   delivery_address: {
+    name: String,
+    phone: String,
     street: String,
     ward: String,
     district: String,
