@@ -11,9 +11,45 @@ const { initSocket } = require('./socket');
 
 
 mongoose.set('strictQuery', true);
-mongoose.connect('mongodb://localhost/ships_db')
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('MongoDB connection error:', err));
+
+// Kết nối đến MongoDB Atlas
+mongoose.connect('mongodb+srv://nndminh03:psrMirsKkv19Yia6@ships-cluster.guijyap.mongodb.net/ships_db', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => {
+  console.log('MongoDB Atlas connected');
+  // Import tất cả models để đảm bảo chúng được đăng ký
+  require('./models/User');
+  require('./models/UserAddress');
+  require('./models/UserCoupon');
+  require('./models/Coupon');
+  require('./models/Notification');
+  require('./models/Rating');
+  require('./models/Order');
+  require('./models/OrderItem');
+  require('./models/Warehouse');
+  require('./models/CarTransport');
+  require('./models/GroupOrder');
+  require('./models/TransferScript');
+  require('./models/Tracking');
+  require('./models/Payment');
+  require('./models/CustomerCost');
+  require('./models/Salary');
+  require('./models/Product');
+})
+.catch(err => console.error('MongoDB Atlas connection error:', err));
+
+// Kết nối đến MongoDB local (giữ lại để backup)
+const localConnection = mongoose.createConnection('mongodb://127.0.0.1:27017/ships_db');
+localConnection.on('connected', () => console.log('MongoDB Local connected'));
+localConnection.on('error', err => console.error('MongoDB Local connection error:', err));
+
+// Export connections để sử dụng trong các models
+module.exports = {
+  mongoose,
+  localConnection
+};
 
 app.use(express.json());
 app.use(cors({
