@@ -6,6 +6,8 @@ const userAddressSchema = new mongoose.Schema({
   label: { type: String },
   name: { type: String },
   phone: { type: String },
+  email: { type: String },
+  note: { type: String },
   street: { type: String, required: true },
   ward: { type: String, required: true },
   district: { type: String, required: true },

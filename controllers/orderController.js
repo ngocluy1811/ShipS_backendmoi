@@ -259,7 +259,14 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Thiếu thông tin người gửi: ' + missingPickupFields.join(', ') });
     }
 
-    const distance = await calculateDistance(pickupAddress, deliveryAddress);
+    // Bổ sung email, note nếu có
+    if (req.body.pickup_address?.email) pickupData.email = req.body.pickup_address.email;
+    if (req.body.pickup_address?.note) pickupData.note = req.body.pickup_address.note;
+    if (req.body.delivery_address?.email) deliveryData.email = req.body.delivery_address.email;
+    if (req.body.delivery_address?.note) deliveryData.note = req.body.delivery_address.note;
+
+    // Lấy distance từ FE nếu có, nếu không thì tự tính
+    const distance = typeof req.body.distance === 'number' ? req.body.distance : await calculateDistance(pickupAddress, deliveryAddress);
     const fees = calculateShippingFee(weight, dimensions, distance, service_type, is_suburban || false, order_value || 0);
 
     // Lấy các trường phí từ FE gửi lên (nếu có)
@@ -270,7 +277,10 @@ router.post('/', async (req, res) => {
       surcharge: body_surcharge,
       discount: body_discount,
       total_fee: body_total_fee,
-      pricing: body_pricing
+      pricing: body_pricing,
+      platform_fee: body_platform_fee,
+      overtime_fee: body_overtime_fee,
+      waiting_fee: body_waiting_fee
     } = req.body;
 
     let total_fee = fees.shipping_fee + fees.additional_fees.total_additional;
@@ -303,6 +313,60 @@ router.post('/', async (req, res) => {
     // Lấy loại hàng hóa chính từ order_items[0]
     const mainItemType = Array.isArray(order_items) && order_items.length > 0 ? order_items[0].item_type : '';
 
+    // Đơn giá ship theo km (có thể điều chỉnh theo chính sách)
+    const PER_KM_FEE = 2000;
+    // Build cost_details chi tiết từng loại phí (luôn đủ trường, không để object rỗng)
+    const cost_details = {
+      distance_fee: {
+        label: `Phí ship theo khoảng cách (${distance ? distance.toFixed(2) : '0'} km)`,
+        value: distance > 0 ? Math.round(distance * PER_KM_FEE) : 0
+      },
+      over_weight_fee: {
+        label: 'Phí vượt cản',
+        value: fees.additional_fees?.suburban_fee || 0
+      },
+      shipping_fee: {
+        label: 'Cước phí giao hàng',
+        value: fees.shipping_fee || 0
+      },
+      service_fee: {
+        label: 'Phí dịch vụ vận chuyển',
+        value: finalServiceFee || 0
+      },
+      packing_fee: {
+        label: 'Phí đóng gói',
+        value: body_package_fee || 0
+      },
+      surcharge: {
+        label: 'Phụ thu',
+        value: body_surcharge || 0
+      },
+      insurance_fee: {
+        label: 'Phí bảo hiểm',
+        value: fees.additional_fees?.insurance_fee || 0
+      },
+      platform_fee: {
+        label: 'Phí nền tảng',
+        value: body_platform_fee || 0
+      },
+      overtime_fee: {
+        label: 'Phí ngoài giờ',
+        value: body_overtime_fee || 0
+      },
+      waiting_fee: {
+        label: 'Phí chờ',
+        value: body_waiting_fee || 0
+      },
+      discount: {
+        label: 'Giảm giá',
+        value: (body_discount || 0) + (coupon_discount || 0)
+      },
+      total_fee: {
+        label: 'Tổng thanh toán',
+        value: finalTotalFee
+      }
+    };
+
     const order = new Order({
       order_id: `order_${Date.now()}`,
       coupon_id,
@@ -323,6 +387,8 @@ router.post('/', async (req, res) => {
       pickup_time_suggestion,
       created_at: new Date(),
       updated_at: new Date(),
+      coupon_code: req.body.coupon_code || '',
+      cost_details,
     });
 
     const savedOrderItems = [];
@@ -332,7 +398,9 @@ router.post('/', async (req, res) => {
         order_id: order.order_id,
         description: item.description,
         quantity: item.quantity,
-        item_type: item.item_type
+        item_type: item.item_type,
+        code: item.code || '',
+        status: item.status || 'pending'
       });
       await orderItem.save();
       savedOrderItems.push({
@@ -340,6 +408,7 @@ router.post('/', async (req, res) => {
         description: item.description,
         quantity: item.quantity,
         item_type: item.item_type,
+        code: item.code || '',
         status: item.status || 'pending'
       });
     }
@@ -352,12 +421,7 @@ router.post('/', async (req, res) => {
     res.json({
       message: 'Tạo đơn hàng thành công.',
       order_id: order.order_id,
-      cost_details: {
-        service_fee: finalServiceFee,
-        additional_fees: fees.additional_fees,
-        coupon_discount,
-        total_fee: finalTotalFee
-      }
+      cost_details
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -418,9 +482,23 @@ router.get('/:order_id', async (req, res) => {
     } else if (req.user.role !== 'admin' && req.user.role !== 'staff') {
       return res.status(403).json({ error: 'Không có quyền truy cập.' });
     }
-    const order = await Order.findOne(query);
+    const order = await Order.findOne(query).lean();
     if (!order) {
       return res.status(404).json({ error: 'Đơn hàng không tồn tại.' });
+    }
+    // Lấy thông tin đầy đủ của địa chỉ giao hàng từ UserAddress
+    if (order.delivery_address_id) {
+      const deliveryAddress = await UserAddress.findOne({ address_id: order.delivery_address_id }).lean();
+      if (deliveryAddress) {
+        order.delivery_address_full = deliveryAddress;
+      }
+    }
+    // Lấy thông tin đầy đủ của địa chỉ lấy hàng từ UserAddress
+    if (order.pickup_address_id) {
+      const pickupAddress = await UserAddress.findOne({ address_id: order.pickup_address_id }).lean();
+      if (pickupAddress) {
+        order.pickup_address_full = pickupAddress;
+      }
     }
     res.json(order);
   } catch (error) {

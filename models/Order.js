@@ -14,7 +14,9 @@ const orderSchema = new mongoose.Schema({
     street: String,
     ward: String,
     district: String,
-    city: String
+    city: String,
+    email: String,
+    note: String
   },
   delivery_address_id: { type: String, ref: 'UserAddress' },
   delivery_address: {
@@ -23,7 +25,9 @@ const orderSchema = new mongoose.Schema({
     street: String,
     ward: String,
     district: String,
-    city: String
+    city: String,
+    email: String,
+    note: String
   },
   weight: { type: Number },
   dimensions: { type: String },
@@ -33,7 +37,8 @@ const orderSchema = new mongoose.Schema({
       description: { type: String },
       quantity: { type: Number },
       item_type: { type: String },
-      status: { type: String }
+      status: { type: String },
+      code: { type: String }
     }
   ],
   service_type: { type: String },
@@ -49,6 +54,8 @@ const orderSchema = new mongoose.Schema({
   updated_at: { type: Date, default: Date.now },
   payment_method: { type: String },
   payment_status: { type: String, default: 'pending' },
+  cost_details: { type: Object },
+  coupon_code: { type: String },
 });
 
 module.exports = mongoose.model('Order', orderSchema);
