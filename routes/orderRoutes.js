@@ -69,9 +69,6 @@ router.post('/', async (req, res) => {
       if (!coupon.is_active || coupon.uses_count >= coupon.max_uses) {
         return res.status(400).json({ error: 'Coupon không khả dụng.' });
       }
-      if (total_fee < coupon.min_order_amount) {
-        return res.status(400).json({ error: 'Giá trị đơn hàng không đủ để áp dụng coupon.' });
-      }
       if (coupon.discount_type === 'percent') {
         total_fee -= total_fee * (coupon.discount_value / 100);
       } else {
@@ -88,23 +85,31 @@ router.post('/', async (req, res) => {
       warehouse_id,
       pickup_address_id,
       pickup_address: {
+        name: pickupAddress.name,
+        phone: pickupAddress.phone,
         street: pickupAddress.street,
         ward: pickupAddress.ward,
         district: pickupAddress.district,
-        city: pickupAddress.city
+        city: pickupAddress.city,
+        email: pickupAddress.email || '',
+        note: pickupAddress.note || ''
       },
       delivery_address_id,
       delivery_address: {
+        name: deliveryAddress.name,
+        phone: deliveryAddress.phone,
         street: deliveryAddress.street,
         ward: deliveryAddress.ward,
         district: deliveryAddress.district,
-        city: deliveryAddress.city
+        city: deliveryAddress.city,
+        email: deliveryAddress.email || '',
+        note: deliveryAddress.note || ''
       },
       weight,
       dimensions,
       service_type,
-      total_fee,
-      service_fee: service_fee || 0,
+      total_fee: typeof req.body.total_fee === 'number' ? req.body.total_fee : total_fee,
+      service_fee: typeof req.body.service_fee === 'number' ? req.body.service_fee : (service_fee || 0),
       is_suburban: is_suburban || false,
       estimate_time,
       pickup_time_suggestion,
@@ -112,6 +117,9 @@ router.post('/', async (req, res) => {
       payment_status: payment_status || 'pending',
       created_at: new Date(),
       updated_at: new Date(),
+      cost_details: req.body.cost_details || {},
+      coupon_code: req.body.coupon_code || '',
+      order_value: req.body.order_value || 0,
     });
 
     const savedOrderItems = [];
@@ -121,7 +129,9 @@ router.post('/', async (req, res) => {
         order_id: order.order_id,
         description: item.description,
         quantity: item.quantity,
-        item_type: item.item_type
+        item_type: item.item_type,
+        code: item.code || '',
+        status: item.status || 'pending'
       });
       await orderItem.save();
       savedOrderItems.push({
@@ -129,6 +139,7 @@ router.post('/', async (req, res) => {
         description: item.description,
         quantity: item.quantity,
         item_type: item.item_type,
+        code: item.code || '',
         status: item.status || 'pending'
       });
     }
@@ -138,7 +149,7 @@ router.post('/', async (req, res) => {
 
     warehouse.current_stock += 1;
     await warehouse.save();
-    res.json({ message: 'Tạo đơn hàng thành công.' });
+    res.json({ message: 'Tạo đơn hàng thành công.', order_id: order.order_id });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

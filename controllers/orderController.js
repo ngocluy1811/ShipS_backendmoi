@@ -293,9 +293,6 @@ router.post('/', async (req, res) => {
       if (!coupon.is_active || coupon.uses_count >= coupon.max_uses) {
         return res.status(400).json({ error: 'Coupon không khả dụng.' });
       }
-      if (total_fee < coupon.min_order_amount) {
-        return res.status(400).json({ error: 'Giá trị đơn hàng không đủ để áp dụng coupon.' });
-      }
       if (coupon.discount_type === 'percent') {
         coupon_discount = total_fee * (coupon.discount_value / 100);
       } else {
@@ -580,7 +577,39 @@ const updateOrder = async (req, res) => {
     const updates = {};
     for (const key in req.body) {
       if (allowedUpdates.includes(key)) {
-        updates[key] = req.body[key];
+        // Nếu là object address, merge từng trường, đảm bảo không mất trường cũ
+        if ((key === 'pickup_address' || key === 'delivery_address') && typeof req.body[key] === 'object') {
+          let original = {};
+          if (order[key]) {
+            if (typeof order[key].toObject === 'function') {
+              original = order[key].toObject();
+            } else if (order[key]._doc) {
+              original = { ...order[key]._doc };
+            } else {
+              original = { ...order[key] };
+            }
+          }
+          updates[key] = { ...original, ...req.body[key] };
+        } else if (key === 'order_items' && Array.isArray(req.body[key]) && Array.isArray(order[key])) {
+          // Chỉ cho phép cập nhật các trường con nhất định, ví dụ: description
+          const allowedItemFields = ['description'];
+          const mergedItems = order[key].map((oldItem) => {
+            const oldObj = oldItem.toObject ? oldItem.toObject() : oldItem;
+            const updateObj = req.body[key].find(i => i._id == oldObj._id);
+            if (updateObj) {
+              // Chỉ merge các trường được phép
+              const filteredUpdate = {};
+              for (const f of allowedItemFields) {
+                if (updateObj.hasOwnProperty(f)) filteredUpdate[f] = updateObj[f];
+              }
+              return { ...oldObj, ...filteredUpdate };
+            }
+            return oldObj;
+          });
+          updates[key] = mergedItems;
+        } else {
+          updates[key] = req.body[key];
+        }
       }
     }
 
