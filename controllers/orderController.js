@@ -476,7 +476,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/:order_id', async (req, res) => {
+const getOrderById = async (req, res) => {
   try {
     const { order_id } = req.params;
     const query = { order_id };
@@ -525,18 +525,77 @@ router.get('/:order_id', async (req, res) => {
         order.delivery_address_full = deliveryAddress;
       }
     }
-    // Lấy thông tin đầy đủ của địa chỉ lấy hàng từ UserAddress
-    if (order.pickup_address_id) {
-      const pickupAddress = await UserAddress.findOne({ address_id: order.pickup_address_id }).lean();
-      if (pickupAddress) {
-        order.pickup_address_full = pickupAddress;
-      }
-    }
+
     res.json(order);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+};
+
+const updateOrder = async (req, res) => {
+  try {
+    const { order_id } = req.params;
+    const query = { order_id };
+    if (req.user.role === 'customer') {
+      query.customer_id = req.user.user_id;
+    } else if (req.user.role !== 'admin' && req.user.role !== 'staff') {
+      return res.status(403).json({ error: 'Không có quyền truy cập.' });
+    }
+
+    const order = await Order.findOne(query);
+    if (!order) {
+      return res.status(404).json({ error: 'Đơn hàng không tồn tại.' });
+    }
+
+    // Chỉ cho phép cập nhật các trường được phép
+    const allowedUpdates = [
+      'status',
+      'shipper_id',
+      'pickup_time',
+      'delivery_time',
+      'delivered_at',
+      'cancel_reason',
+      'payment_status',
+      'payment_method',
+      'total_fee',
+      'service_fee',
+      'cost_details',
+      'pickup_address',
+      'delivery_address',
+      'pickup_address_id',
+      'delivery_address_id',
+      'weight',
+      'dimensions',
+      'item_type',
+      'order_items',
+      'order_value',
+      'estimate_time',
+      'pickup_time_suggestion',
+      'coupon_id',
+      'is_suburban',
+      'note',
+      'description'
+    ];
+
+    const updates = {};
+    for (const key in req.body) {
+      if (allowedUpdates.includes(key)) {
+        updates[key] = req.body[key];
+      }
+    }
+
+    // Cập nhật thời gian
+    updates.updated_at = new Date();
+
+    // Cập nhật đơn hàng
+    Object.assign(order, updates);
+    await order.save();
+
+    res.json({ message: 'Cập nhật đơn hàng thành công.', order });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
 
 router.put('/:order_id/status', async (req, res) => {
   try {
@@ -596,4 +655,7 @@ router.post('/:order_id/assign-shipper', async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = {
+  getOrderById,
+  updateOrder
+};

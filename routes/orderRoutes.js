@@ -6,6 +6,8 @@ const UserAddress = require('../models/UserAddress');
 const OrderItem = require('../models/OrderItem');
 const Coupon = require('../models/Coupon');
 const User = require('../models/User');
+const { getOrderById, updateOrder } = require('../controllers/orderController');
+const requireAuth = require('../middleware/authenticateToken');
 
 router.post('/', async (req, res) => {
   try {
@@ -194,5 +196,9 @@ router.put('/:order_id/status', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+router.put('/:order_id', requireAuth(['admin', 'staff', 'customer', 'shipper']), updateOrder);
+
+router.get('/:order_id', requireAuth(['admin', 'staff', 'customer', 'shipper']), getOrderById);
 
 module.exports = router;
