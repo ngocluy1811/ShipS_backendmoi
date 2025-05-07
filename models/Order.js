@@ -56,6 +56,7 @@ const orderSchema = new mongoose.Schema({
   payment_status: { type: String, default: 'pending' },
   cost_details: { type: Object },
   coupon_code: { type: String },
+  order_value: { type: Number, default: 0 },
 });
 
 module.exports = mongoose.model('Order', orderSchema);

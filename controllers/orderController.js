@@ -314,12 +314,13 @@ router.post('/', async (req, res) => {
     const mainItemType = Array.isArray(order_items) && order_items.length > 0 ? order_items[0].item_type : '';
 
     // Đơn giá ship theo km (có thể điều chỉnh theo chính sách)
-    const PER_KM_FEE = 2000;
+    const PER_KM_FEE = 1000;
+    const distanceNum = Number(distance) || 0;
     // Build cost_details chi tiết từng loại phí (luôn đủ trường, không để object rỗng)
     const cost_details = {
       distance_fee: {
-        label: `Phí ship theo khoảng cách (${distance ? distance.toFixed(2) : '0'} km)`,
-        value: distance > 0 ? Math.round(distance * PER_KM_FEE) : 0
+        label: `Phí ship theo khoảng cách (${distanceNum.toFixed(2)} km)`,
+        value: distanceNum > 0 ? Math.round(distanceNum * PER_KM_FEE) : 0
       },
       over_weight_fee: {
         label: 'Phí vượt cản',
@@ -327,19 +328,19 @@ router.post('/', async (req, res) => {
       },
       shipping_fee: {
         label: 'Cước phí giao hàng',
-        value: fees.shipping_fee || 0
+        value: typeof body_shipping_fee === 'number' ? body_shipping_fee : 0
       },
       service_fee: {
         label: 'Phí dịch vụ vận chuyển',
-        value: finalServiceFee || 0
+        value: typeof body_service_fee === 'number' ? body_service_fee : 0
       },
       packing_fee: {
         label: 'Phí đóng gói',
-        value: body_package_fee || 0
+        value: typeof body_package_fee === 'number' ? body_package_fee : 0
       },
       surcharge: {
         label: 'Phụ thu',
-        value: body_surcharge || 0
+        value: typeof body_surcharge === 'number' ? body_surcharge : 0
       },
       insurance_fee: {
         label: 'Phí bảo hiểm',
@@ -347,19 +348,19 @@ router.post('/', async (req, res) => {
       },
       platform_fee: {
         label: 'Phí nền tảng',
-        value: body_platform_fee || 0
+        value: typeof body_platform_fee === 'number' ? body_platform_fee : 0
       },
       overtime_fee: {
         label: 'Phí ngoài giờ',
-        value: body_overtime_fee || 0
+        value: typeof body_overtime_fee === 'number' ? body_overtime_fee : 0
       },
       waiting_fee: {
         label: 'Phí chờ',
-        value: body_waiting_fee || 0
+        value: typeof body_waiting_fee === 'number' ? body_waiting_fee : 0
       },
       discount: {
         label: 'Giảm giá',
-        value: (body_discount || 0) + (coupon_discount || 0)
+        value: typeof body_discount === 'number' ? body_discount : 0
       },
       total_fee: {
         label: 'Tổng thanh toán',
@@ -389,6 +390,8 @@ router.post('/', async (req, res) => {
       updated_at: new Date(),
       coupon_code: req.body.coupon_code || '',
       cost_details,
+      order_value: order_value || 0,
+      payment_method: req.body.payment_method || '',
     });
 
     const savedOrderItems = [];
@@ -486,6 +489,35 @@ router.get('/:order_id', async (req, res) => {
     if (!order) {
       return res.status(404).json({ error: 'Đơn hàng không tồn tại.' });
     }
+
+    // Đảm bảo cost_details luôn có format chuẩn
+    if (!order.cost_details || typeof order.cost_details !== 'object') {
+      const PER_KM_FEE = 1000;
+      const distanceNum = Number(order.distance) || 0;
+      order.cost_details = {
+        distance_fee: {
+          label: `Phí ship theo khoảng cách (${distanceNum.toFixed(2)} km)`,
+          value: distanceNum > 0 ? Math.round(distanceNum * PER_KM_FEE) : 0
+        },
+        shipping_fee: {
+          label: 'Cước phí giao hàng',
+          value: order.shipping_fee || 0
+        },
+        service_fee: {
+          label: 'Phí dịch vụ vận chuyển',
+          value: order.service_fee || 0
+        },
+        discount: {
+          label: 'Giảm giá',
+          value: order.discount || 0
+        },
+        total_fee: {
+          label: 'Tổng thanh toán',
+          value: order.total_fee || 0
+        }
+      };
+    }
+
     // Lấy thông tin đầy đủ của địa chỉ giao hàng từ UserAddress
     if (order.delivery_address_id) {
       const deliveryAddress = await UserAddress.findOne({ address_id: order.delivery_address_id }).lean();
