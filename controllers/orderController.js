@@ -487,33 +487,59 @@ const getOrderById = async (req, res) => {
       return res.status(404).json({ error: 'Đơn hàng không tồn tại.' });
     }
 
-    // Đảm bảo cost_details luôn có format chuẩn
-    if (!order.cost_details || typeof order.cost_details !== 'object') {
-      const PER_KM_FEE = 1000;
-      const distanceNum = Number(order.distance) || 0;
-      order.cost_details = {
-        distance_fee: {
-          label: `Phí ship theo khoảng cách (${distanceNum.toFixed(2)} km)`,
-          value: distanceNum > 0 ? Math.round(distanceNum * PER_KM_FEE) : 0
-        },
-        shipping_fee: {
-          label: 'Cước phí giao hàng',
-          value: order.shipping_fee || 0
-        },
-        service_fee: {
-          label: 'Phí dịch vụ vận chuyển',
-          value: order.service_fee || 0
-        },
-        discount: {
-          label: 'Giảm giá',
-          value: order.discount || 0
-        },
-        total_fee: {
-          label: 'Tổng thanh toán',
-          value: order.total_fee || 0
-        }
-      };
-    }
+    // Đảm bảo cost_details luôn có format chuẩn và đủ trường
+    const defaultCostDetails = {
+      distance_fee: {
+        label: `Phí ship theo khoảng cách${order.distance ? ` (${Number(order.distance).toFixed(2)} km)` : ''}`,
+        value: order.cost_details?.distance_fee?.value || order.distance_fee || 0
+      },
+      over_weight_fee: {
+        label: 'Phí vượt cản',
+        value: order.cost_details?.over_weight_fee?.value || order.over_weight_fee || 0
+      },
+      shipping_fee: {
+        label: 'Cước phí giao hàng',
+        value: order.cost_details?.shipping_fee?.value || order.shipping_fee || 0
+      },
+      service_fee: {
+        label: 'Phí dịch vụ vận chuyển',
+        value: order.cost_details?.service_fee?.value || order.service_fee || 0
+      },
+      packing_fee: {
+        label: 'Phí đóng gói',
+        value: order.cost_details?.packing_fee?.value || order.packing_fee || 0
+      },
+      surcharge: {
+        label: 'Phụ thu',
+        value: order.cost_details?.surcharge?.value || order.surcharge || 0
+      },
+      insurance_fee: {
+        label: 'Phí bảo hiểm',
+        value: order.cost_details?.insurance_fee?.value || order.insurance_fee || 0
+      },
+      platform_fee: {
+        label: 'Phí nền tảng',
+        value: order.cost_details?.platform_fee?.value || order.platform_fee || 0
+      },
+      overtime_fee: {
+        label: 'Phí ngoài giờ',
+        value: order.cost_details?.overtime_fee?.value || order.overtime_fee || 0
+      },
+      waiting_fee: {
+        label: 'Phí chờ',
+        value: order.cost_details?.waiting_fee?.value || order.waiting_fee || 0
+      },
+      discount: {
+        label: 'Giảm giá',
+        value: order.cost_details?.discount?.value || order.discount || 0
+      },
+      total_fee: {
+        label: 'Tổng thanh toán',
+        value: order.cost_details?.total_fee?.value || order.total_fee || 0
+      }
+    };
+    // Nếu order.cost_details thiếu trường nào thì bổ sung
+    order.cost_details = { ...defaultCostDetails, ...(order.cost_details || {}) };
 
     // Lấy thông tin đầy đủ của địa chỉ giao hàng từ UserAddress
     if (order.delivery_address_id) {

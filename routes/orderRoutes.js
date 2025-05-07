@@ -60,7 +60,36 @@ router.post('/', async (req, res) => {
       return res.status(404).json({ error: 'Địa chỉ không tồn tại.' });
     }
 
-    let total_fee = service_fee || 0;
+    // Lấy các trường phí từ FE gửi lên (nếu có)
+    const shipping_fee = typeof req.body.shipping_fee === 'number' ? req.body.shipping_fee : 0;
+    const service_fee_val = typeof req.body.service_fee === 'number' ? req.body.service_fee : 0;
+    const packing_fee = typeof req.body.packing_fee === 'number' ? req.body.packing_fee : 0;
+    const surcharge = typeof req.body.surcharge === 'number' ? req.body.surcharge : 0;
+    const discount = typeof req.body.discount === 'number' ? req.body.discount : 0;
+    // Các phí khác nếu có
+    const over_weight_fee = typeof req.body.over_weight_fee === 'number' ? req.body.over_weight_fee : 0;
+    const platform_fee = typeof req.body.platform_fee === 'number' ? req.body.platform_fee : 0;
+    const overtime_fee = typeof req.body.overtime_fee === 'number' ? req.body.overtime_fee : 0;
+    const waiting_fee = typeof req.body.waiting_fee === 'number' ? req.body.waiting_fee : 0;
+    // Tính lại tổng tiền
+    const total_fee = shipping_fee + service_fee_val + packing_fee + surcharge + over_weight_fee + platform_fee + overtime_fee + waiting_fee - discount;
+
+    // Build cost_details chuẩn
+    const cost_details = {
+      distance_fee: req.body.cost_details?.distance_fee || { label: '', value: 0 },
+      over_weight_fee: { label: 'Phí vượt cản', value: over_weight_fee },
+      shipping_fee: { label: 'Cước phí giao hàng', value: shipping_fee },
+      service_fee: { label: 'Phí dịch vụ vận chuyển', value: service_fee_val },
+      packing_fee: { label: 'Phí đóng gói', value: packing_fee },
+      surcharge: { label: 'Phụ thu', value: surcharge },
+      platform_fee: { label: 'Phí nền tảng', value: platform_fee },
+      overtime_fee: { label: 'Phí ngoài giờ', value: overtime_fee },
+      waiting_fee: { label: 'Phí chờ', value: waiting_fee },
+      discount: { label: 'Giảm giá', value: discount },
+      total_fee: { label: 'Tổng thanh toán', value: total_fee }
+    };
+
+    let total_fee_order = total_fee;
     if (coupon_id) {
       const coupon = await Coupon.findOne({ coupon_id });
       if (!coupon) {
@@ -70,9 +99,9 @@ router.post('/', async (req, res) => {
         return res.status(400).json({ error: 'Coupon không khả dụng.' });
       }
       if (coupon.discount_type === 'percent') {
-        total_fee -= total_fee * (coupon.discount_value / 100);
+        total_fee_order -= total_fee_order * (coupon.discount_value / 100);
       } else {
-        total_fee -= coupon.discount_value;
+        total_fee_order -= coupon.discount_value;
       }
       coupon.uses_count += 1;
       await coupon.save();
@@ -108,8 +137,8 @@ router.post('/', async (req, res) => {
       weight,
       dimensions,
       service_type,
-      total_fee: typeof req.body.total_fee === 'number' ? req.body.total_fee : total_fee,
-      service_fee: typeof req.body.service_fee === 'number' ? req.body.service_fee : (service_fee || 0),
+      total_fee: total_fee_order,
+      service_fee: service_fee_val,
       is_suburban: is_suburban || false,
       estimate_time,
       pickup_time_suggestion,
@@ -117,7 +146,7 @@ router.post('/', async (req, res) => {
       payment_status: payment_status || 'pending',
       created_at: new Date(),
       updated_at: new Date(),
-      cost_details: req.body.cost_details || {},
+      cost_details,
       coupon_code: req.body.coupon_code || '',
       order_value: req.body.order_value || 0,
     });
