@@ -40,15 +40,6 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://nndminh03:psrMirsKkv1
 })
 .catch(err => console.error('MongoDB Atlas connection error:', err));
 
-//Kết nối đến MongoDB local (chỉ dùng khi phát triển local)
-// const localConnection = mongoose.createConnection('mongodb://127.0.0.1:27017/ships_db');
-// localConnection.on('connected', () => console.log('MongoDB Local connected'));
-// localConnection.on('error', err => console.error('MongoDB Local connection error:', err));
-// Kết nối đến MongoDB local (chỉ dùng khi phát triển local)
-const localConnection = mongoose.createConnection('mongodb://localhost:27017/ships_db');
-localConnection.on('connected', () => console.log('MongoDB Local connected'));
-localConnection.on('error', err => console.error('MongoDB Local connection error:', err));
-
 // Export connections để sử dụng trong các models (chỉ export mongoose cho Atlas)
 module.exports = mongoose;
 
@@ -412,6 +403,7 @@ const customerCostRouter = require('./controllers/customerCostController');
 const salaryRouter = require('./controllers/salaryController');
 const productRouter = require('./routes/productRoutes');
 const deliveryRouter = require('./routes/deliveryRoutes');
+const vietmapRoutes = require('./routes/vietmapRoutes');
 
 // Public routes (không yêu cầu token)
 app.use('/api/users', userRouter);
@@ -434,6 +426,7 @@ app.use('/api/payments', authenticateToken(['admin', 'staff', 'customer']), paym
 app.use('/api/customer-cost', authenticateToken(['admin', 'staff', 'customer']), customerCostRouter);
 app.use('/api/salaries', authenticateToken(['admin', 'staff', 'shipper']), salaryRouter);
 app.use('/api/delivery', deliveryRouter);
+app.use('/api/vietmap', vietmapRoutes);
 
 // Thêm route tạo thanh toán Momo giả lập trực tiếp vào app
 // app.post('/api/momo/create-payment', (req, res) => {
