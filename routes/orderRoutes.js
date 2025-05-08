@@ -241,4 +241,65 @@ router.put('/:order_id', requireAuth(['admin', 'staff', 'customer', 'shipper']),
 
 router.get('/:order_id', requireAuth(['admin', 'staff', 'customer', 'shipper']), getOrderById);
 
+router.post('/:order_id/claim', requireAuth(['shipper']), async (req, res) => {
+  try {
+    const { order_id } = req.params;
+    const shipper_id = req.user.user_id;
+
+    // Tìm đơn hàng
+    const order = await Order.findOne({ order_id });
+    if (!order) {
+      return res.status(404).json({ error: 'Đơn hàng không tồn tại.' });
+    }
+
+    // Kiểm tra trạng thái đơn hàng đã bị hủy chưa
+    if (order.status === 'cancelled' || order.status === 'Đã hủy') {
+      return res.status(400).json({ error: 'Đơn hàng đã bị hủy, shipper không thể nhận đơn này.' });
+    }
+
+    // Kiểm tra đơn đã có shipper chưa
+    if (order.shipper_id) {
+      return res.status(400).json({ error: 'Đơn hàng đã có shipper nhận.' });
+    }
+
+    // Kiểm tra shipper có thuộc kho của đơn hàng không
+    if (order.warehouse_id && req.user.warehouse_id && order.warehouse_id !== req.user.warehouse_id) {
+      return res.status(400).json({ error: 'Bạn không thuộc kho của đơn hàng này.' });
+    }
+
+    // Lấy thông tin shipper
+    const shipper = await User.findOne({ user_id: shipper_id });
+    if (!shipper) {
+      return res.status(404).json({ error: 'Không tìm thấy thông tin shipper.' });
+    }
+
+    // Cập nhật thông tin shipper và trạng thái đơn hàng
+    order.shipper_id = shipper_id;
+    order.shipper_info = {
+      name: shipper.name,
+      phone: shipper.phone,
+      email: shipper.email,
+      avatar: shipper.avatar || '',
+      vehicle_info: shipper.vehicle_info || {}
+    };
+    order.status = 'preparing'; // Trạng thái đang chuẩn bị
+    order.updated_at = new Date();
+    order.claimed_at = new Date(); // Thời điểm shipper nhận đơn
+
+    await order.save();
+
+    res.json({ 
+      message: 'Nhận đơn thành công!', 
+      order: {
+        order_id: order.order_id,
+        status: order.status,
+        shipper_info: order.shipper_info,
+        claimed_at: order.claimed_at
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

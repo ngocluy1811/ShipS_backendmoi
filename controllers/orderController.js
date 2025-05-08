@@ -549,6 +549,44 @@ const getOrderById = async (req, res) => {
       }
     }
 
+    // Lấy thông tin shipper nếu có shipper_id
+    if (order.shipper_id) {
+      const shipper = await User.findOne({ user_id: order.shipper_id });
+      if (shipper) {
+        order.shipper_info = {
+          name: shipper.name || shipper.fullName || '',
+          fullName: shipper.fullName || shipper.name || '',
+          phone: shipper.phone || shipper.phoneNumber || '',
+          phoneNumber: shipper.phoneNumber || shipper.phone || '',
+          avatar: shipper.avatar || '',
+          email: shipper.email || '',
+          address: shipper.address || '',
+          warehouse_id: shipper.warehouse_id || '',
+          vehicle_info: shipper.vehicle_info || {}
+        };
+      } else {
+        console.warn('Không tìm thấy shipper với user_id:', order.shipper_id);
+      }
+    }
+
+    // Nếu có timeline/history, gắn thông tin shipper cho từng bước nếu có shipper_id
+    if (Array.isArray(order.timeline)) {
+      for (const step of order.timeline) {
+        if (step.shipper_id) {
+          const stepShipper = await User.findOne({ user_id: step.shipper_id });
+          if (stepShipper) {
+            step.shipper = {
+              name: stepShipper.name,
+              phone: stepShipper.phone,
+              avatar: stepShipper.avatar || '',
+              email: stepShipper.email || '',
+              vehicle_info: stepShipper.vehicle_info || {}
+            };
+          }
+        }
+      }
+    }
+
     res.json(order);
   } catch (error) {
     res.status(500).json({ error: error.message });
