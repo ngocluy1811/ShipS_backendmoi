@@ -704,8 +704,39 @@ router.put('/:order_id/status', async (req, res) => {
     if (req.user.role === 'shipper' && order.shipper_id !== req.user.user_id) {
       return res.status(403).json({ error: 'Không có quyền cập nhật trạng thái cho đơn hàng này.' });
     }
-    order.status = status;
-    if (status === 'delivered') {
+
+    // Kiểm soát quy trình chuyển trạng thái (chặt chẽ, không phân biệt hoa thường)
+    const statusFlow = ['pending', 'preparing', 'delivering', 'delivered'];
+    const currentStatus = String(order.status).toLowerCase().trim();
+    const nextStatus = String(status).toLowerCase().trim();
+    const currentIndex = statusFlow.indexOf(currentStatus);
+    const nextIndex = statusFlow.indexOf(nextStatus);
+
+    console.log('Shipper:', req.user.user_id, 'Order:', order_id, 'Current:', currentStatus, 'Next:', nextStatus);
+
+    if (currentIndex === -1 || nextIndex === -1) {
+      return res.status(400).json({ error: 'Trạng thái không hợp lệ. Chỉ chấp nhận: pending, preparing, delivering, delivered.' });
+    }
+    if (nextIndex === currentIndex) {
+      return res.status(400).json({ error: 'Trạng thái mới phải khác trạng thái hiện tại.' });
+    }
+    // Không cho phép bỏ qua bước
+    if (nextIndex > currentIndex + 1) {
+      if (currentStatus === 'pending' && nextStatus === 'delivering') {
+        return res.status(400).json({ error: 'Đơn hàng chưa được chuẩn bị. Vui lòng quét mã QR để chuyển sang trạng thái "Đang chuẩn bị".' });
+      }
+      if (currentStatus === 'preparing' && nextStatus === 'delivered') {
+        return res.status(400).json({ error: 'Đơn hàng chưa được giao, không thể xác nhận hoàn thành đơn.' });
+      }
+      return res.status(400).json({ error: 'Không thể chuyển trạng thái vượt quá quy trình.' });
+    }
+    // Không cho phép lùi trạng thái
+    if (nextIndex < currentIndex) {
+      return res.status(400).json({ error: 'Không thể quay lại trạng thái trước.' });
+    }
+
+    order.status = nextStatus;
+    if (nextStatus === 'delivered') {
       order.delivered_at = new Date();
     }
     order.updated_at = new Date();
