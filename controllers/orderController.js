@@ -549,6 +549,44 @@ const getOrderById = async (req, res) => {
       }
     }
 
+    // Lấy thông tin shipper nếu có shipper_id
+    if (order.shipper_id) {
+      const shipper = await User.findOne({ user_id: order.shipper_id });
+      if (shipper) {
+        order.shipper_info = {
+          name: shipper.name || shipper.fullName || '',
+          fullName: shipper.fullName || shipper.name || '',
+          phone: shipper.phone || shipper.phoneNumber || '',
+          phoneNumber: shipper.phoneNumber || shipper.phone || '',
+          avatar: shipper.avatar || '',
+          email: shipper.email || '',
+          address: shipper.address || '',
+          warehouse_id: shipper.warehouse_id || '',
+          vehicle_info: shipper.vehicle_info || {}
+        };
+      } else {
+        console.warn('Không tìm thấy shipper với user_id:', order.shipper_id);
+      }
+    }
+
+    // Nếu có timeline/history, gắn thông tin shipper cho từng bước nếu có shipper_id
+    if (Array.isArray(order.timeline)) {
+      for (const step of order.timeline) {
+        if (step.shipper_id) {
+          const stepShipper = await User.findOne({ user_id: step.shipper_id });
+          if (stepShipper) {
+            step.shipper = {
+              name: stepShipper.name,
+              phone: stepShipper.phone,
+              avatar: stepShipper.avatar || '',
+              email: stepShipper.email || '',
+              vehicle_info: stepShipper.vehicle_info || {}
+            };
+          }
+        }
+      }
+    }
+
     res.json(order);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -666,8 +704,39 @@ router.put('/:order_id/status', async (req, res) => {
     if (req.user.role === 'shipper' && order.shipper_id !== req.user.user_id) {
       return res.status(403).json({ error: 'Không có quyền cập nhật trạng thái cho đơn hàng này.' });
     }
-    order.status = status;
-    if (status === 'delivered') {
+
+    // Kiểm soát quy trình chuyển trạng thái (chặt chẽ, không phân biệt hoa thường)
+    const statusFlow = ['pending', 'preparing', 'delivering', 'delivered'];
+    const currentStatus = String(order.status).toLowerCase().trim();
+    const nextStatus = String(status).toLowerCase().trim();
+    const currentIndex = statusFlow.indexOf(currentStatus);
+    const nextIndex = statusFlow.indexOf(nextStatus);
+
+    console.log('Shipper:', req.user.user_id, 'Order:', order_id, 'Current:', currentStatus, 'Next:', nextStatus);
+
+    if (currentIndex === -1 || nextIndex === -1) {
+      return res.status(400).json({ error: 'Trạng thái không hợp lệ. Chỉ chấp nhận: pending, preparing, delivering, delivered.' });
+    }
+    if (nextIndex === currentIndex) {
+      return res.status(400).json({ error: 'Trạng thái mới phải khác trạng thái hiện tại.' });
+    }
+    // Không cho phép bỏ qua bước
+    if (nextIndex > currentIndex + 1) {
+      if (currentStatus === 'pending' && nextStatus === 'delivering') {
+        return res.status(400).json({ error: 'Đơn hàng chưa được chuẩn bị. Vui lòng quét mã QR để chuyển sang trạng thái "Đang chuẩn bị".' });
+      }
+      if (currentStatus === 'preparing' && nextStatus === 'delivered') {
+        return res.status(400).json({ error: 'Đơn hàng chưa được giao, không thể xác nhận hoàn thành đơn.' });
+      }
+      return res.status(400).json({ error: 'Không thể chuyển trạng thái vượt quá quy trình.' });
+    }
+    // Không cho phép lùi trạng thái
+    if (nextIndex < currentIndex) {
+      return res.status(400).json({ error: 'Không thể quay lại trạng thái trước.' });
+    }
+
+    order.status = nextStatus;
+    if (nextStatus === 'delivered') {
       order.delivered_at = new Date();
     }
     order.updated_at = new Date();

@@ -218,6 +218,11 @@ router.put('/:order_id/status', async (req, res) => {
     if (!status) {
       return res.status(400).json({ error: 'Vui lòng cung cấp status.' });
     }
+    const allowedStatuses = ['pending', 'preparing', 'delivering', 'delivered'];
+    const nextStatus = String(status).toLowerCase().trim();
+    if (!allowedStatuses.includes(nextStatus)) {
+      return res.status(400).json({ error: 'Trạng thái không hợp lệ. Chỉ chấp nhận: pending, preparing, delivering, delivered.' });
+    }
     const order = await Order.findOne({ order_id });
     if (!order) {
       return res.status(404).json({ error: 'Đơn hàng không tồn tại.' });
@@ -225,12 +230,72 @@ router.put('/:order_id/status', async (req, res) => {
     if (req.user.role === 'shipper' && order.shipper_id !== req.user.user_id) {
       return res.status(403).json({ error: 'Không có quyền cập nhật trạng thái cho đơn hàng này.' });
     }
+    const currentStatus = String(order.status).toLowerCase().trim();
+    const statusFlow = ['pending', 'preparing', 'delivering', 'delivered'];
+    const currentIndex = statusFlow.indexOf(currentStatus);
+    const nextIndex = statusFlow.indexOf(nextStatus);
+    if (currentIndex === -1) {
+      return res.status(400).json({ error: 'Trạng thái hiện tại của đơn hàng không hợp lệ.' });
+    }
+    if (nextIndex === -1) {
+      return res.status(400).json({ error: 'Trạng thái mới không hợp lệ.' });
+    }
+    if (nextIndex === currentIndex) {
+      return res.status(400).json({ error: 'Trạng thái mới phải khác trạng thái hiện tại.' });
+    }
+    if (nextIndex < currentIndex) {
+      return res.status(400).json({ error: 'Không thể cập nhật lùi về trạng thái trước.' });
+    }
+    if (nextIndex > currentIndex + 1) {
+      return res.status(400).json({ error: 'Không thể bỏ qua bước trạng thái.' });
+    }
     order.status = status;
     if (status === 'delivered') {
       order.delivered_at = new Date();
     }
     order.updated_at = new Date();
+    // Thêm vào timeline
+    if (!Array.isArray(order.timeline)) order.timeline = [];
+    let description = '';
+    switch (status) {
+      case 'preparing':
+        description = 'Đơn hàng đang được chuẩn bị để giao cho shipper'; break;
+      case 'delivering':
+        description = 'Shipper đang giao hàng'; break;
+      case 'delivered':
+        description = 'Đơn hàng đã giao thành công'; break;
+      case 'cancelled':
+      case 'Đã hủy':
+        description = 'Đơn hàng đã bị hủy'; break;
+      default:
+        description = '';
+    }
+    order.timeline.push({
+      status,
+      time: new Date(),
+      shipper_id: order.shipper_id || null,
+      description
+    });
     await order.save();
+
+    // Emit socket event to both order_id room and 'orders' room
+    const io = require('../socket').getIO();
+    if (io) {
+      io.to(order_id).emit('order_status_updated', {
+        order_id,
+        status,
+        updated_at: order.updated_at,
+        timeline: order.timeline
+      });
+      io.to('orders').emit('order_status_updated', {
+        order_id,
+        status,
+        updated_at: order.updated_at,
+        timeline: order.timeline
+      });
+      console.log('[SOCKET] Emitted order_status_updated for order:', order_id, 'and to orders room');
+    }
+
     res.json({ message: 'Cập nhật trạng thái đơn hàng thành công.' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -240,5 +305,66 @@ router.put('/:order_id/status', async (req, res) => {
 router.put('/:order_id', requireAuth(['admin', 'staff', 'customer', 'shipper']), updateOrder);
 
 router.get('/:order_id', requireAuth(['admin', 'staff', 'customer', 'shipper']), getOrderById);
+
+router.post('/:order_id/claim', requireAuth(['shipper']), async (req, res) => {
+  try {
+    const { order_id } = req.params;
+    const shipper_id = req.user.user_id;
+
+    // Tìm đơn hàng
+    const order = await Order.findOne({ order_id });
+    if (!order) {
+      return res.status(404).json({ error: 'Đơn hàng không tồn tại.' });
+    }
+
+    // Kiểm tra trạng thái đơn hàng đã bị hủy chưa
+    if (order.status === 'cancelled' || order.status === 'Đã hủy') {
+      return res.status(400).json({ error: 'Đơn hàng đã bị hủy, shipper không thể nhận đơn này.' });
+    }
+
+    // Kiểm tra đơn đã có shipper chưa
+    if (order.shipper_id) {
+      return res.status(400).json({ error: 'Đơn hàng đã có shipper nhận.' });
+    }
+
+    // Kiểm tra shipper có thuộc kho của đơn hàng không
+    if (order.warehouse_id && req.user.warehouse_id && order.warehouse_id !== req.user.warehouse_id) {
+      return res.status(400).json({ error: 'Bạn không thuộc kho của đơn hàng này.' });
+    }
+
+    // Lấy thông tin shipper
+    const shipper = await User.findOne({ user_id: shipper_id });
+    if (!shipper) {
+      return res.status(404).json({ error: 'Không tìm thấy thông tin shipper.' });
+    }
+
+    // Cập nhật thông tin shipper và trạng thái đơn hàng
+    order.shipper_id = shipper_id;
+    order.shipper_info = {
+      name: shipper.name,
+      phone: shipper.phone,
+      email: shipper.email,
+      avatar: shipper.avatar || '',
+      vehicle_info: shipper.vehicle_info || {}
+    };
+    order.status = 'preparing'; // Trạng thái đang chuẩn bị
+    order.updated_at = new Date();
+    order.claimed_at = new Date(); // Thời điểm shipper nhận đơn
+
+    await order.save();
+
+    res.json({ 
+      message: 'Nhận đơn thành công!', 
+      order: {
+        order_id: order.order_id,
+        status: order.status,
+        shipper_info: order.shipper_info,
+        claimed_at: order.claimed_at
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 module.exports = router;

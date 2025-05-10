@@ -7,7 +7,8 @@ const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const app = express();
 const http = require('http');
-const { initSocket } = require('./socket');
+const { initSocket, getIO } = require('./socket');
+const ChatMessage = require('./models/ChatMessage');
 
 
 mongoose.set('strictQuery', true);
@@ -397,13 +398,14 @@ const warehouseRouter = require('./controllers/warehouseController');
 const carTransportRouter = require('./controllers/carTransportController');
 const groupOrderRouter = require('./controllers/groupOrderController');
 const transferScriptRouter = require('./controllers/transferScriptController');
-const trackingRouter = require('./controllers/trackingController');
+const trackingRouter = require('./routes/trackingRoutes');
 const paymentRouter = require('./controllers/paymentController');
 const customerCostRouter = require('./controllers/customerCostController');
 const salaryRouter = require('./controllers/salaryController');
 const productRouter = require('./routes/productRoutes');
 const deliveryRouter = require('./routes/deliveryRoutes');
 const vietmapRoutes = require('./routes/vietmapRoutes');
+const uploadRouter = require('./routes/uploadRoutes');
 
 // Public routes (không yêu cầu token)
 app.use('/api/users', userRouter);
@@ -421,12 +423,14 @@ app.use('/api/warehouses', authenticateToken(['admin', 'staff', 'customer']), wa
 app.use('/api/cars', authenticateToken(['admin']), carTransportRouter);
 app.use('/api/group-orders', authenticateToken(['admin']), groupOrderRouter);
 app.use('/api/transfer-scripts', authenticateToken(['admin']), transferScriptRouter);
-app.use('/api/trackings', authenticateToken(['shipper']), trackingRouter);
+app.use('/api/trackings', authenticateToken(['shipper', 'admin', 'staff', 'customer']), trackingRouter);
 app.use('/api/payments', authenticateToken(['admin', 'staff', 'customer']), paymentRouter);
 app.use('/api/customer-cost', authenticateToken(['admin', 'staff', 'customer']), customerCostRouter);
 app.use('/api/salaries', authenticateToken(['admin', 'staff', 'shipper']), salaryRouter);
 app.use('/api/delivery', deliveryRouter);
 app.use('/api/vietmap', vietmapRoutes);
+app.use('/uploads', express.static('uploads'));
+app.use('/api/upload', uploadRouter);
 
 // Thêm route tạo thanh toán Momo giả lập trực tiếp vào app
 // app.post('/api/momo/create-payment', (req, res) => {
@@ -439,7 +443,93 @@ app.post('/momo/create-payment', (req, res) => {
   res.json({ payUrl: 'https://momo.vn/fake-payment-url' });
 });
 
+// API cho phép test tracking qua HTTP POST
+app.post('/api/track/start', async (req, res) => {
+  try {
+    const { order_id, shipper_id } = req.body;
+    const Tracking = require('./models/Tracking');
+
+    // Stop all other active tracking for this shipper
+    await Tracking.updateMany(
+      { shipper_id, order_id: { $ne: order_id }, status: 'active' },
+      { status: 'stopped', stopped_at: new Date() }
+    );
+    // Create or update tracking
+    let tracking = await Tracking.findOne({ order_id, shipper_id });
+    if (tracking) {
+      tracking.status = 'active';
+      tracking.started_at = new Date();
+      tracking.stopped_at = null;
+      await tracking.save();
+    } else {
+      tracking = new Tracking({
+        tracking_id: `tracking_${Date.now()}`,
+        order_id,
+        shipper_id,
+        status: 'active',
+        started_at: new Date()
+      });
+      await tracking.save();
+    }
+    res.json({ success: true, message: "Tracking started", tracking });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// API cập nhật vị trí tracking qua HTTP POST
+app.post('/api/track/update-location', async (req, res) => {
+  try {
+    const { order_id, shipper_id, location } = req.body;
+    const Tracking = require('./models/Tracking');
+    const tracking = await Tracking.findOne({ order_id, shipper_id, status: 'active' });
+    if (tracking) {
+      tracking.location = location;
+      await tracking.save();
+      res.json({ success: true, message: "Location updated", tracking });
+    } else {
+      res.status(404).json({ success: false, message: "No active tracking found" });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// REST API gửi chat message qua socket.io và lưu DB
+app.post('/api/chat/message', async (req, res) => {
+  const io = req.app.get('io');
+  const { orderId, sender, content, type = 'text', fileUrl } = req.body;
+  if (!orderId || !sender || (!content && !fileUrl)) {
+    return res.status(400).json({ error: 'orderId, sender, content or fileUrl required' });
+  }
+  const msg = {
+    orderId,
+    sender,
+    content,
+    type,
+    fileUrl,
+    time: new Date()
+  };
+  // Lưu vào DB
+  await ChatMessage.create(msg);
+  if (io) {
+    io.to(orderId).emit('chat_message', msg);
+  }
+  res.json({ success: true, message: msg });
+});
+
+// API lấy lịch sử chat theo orderId
+app.get('/api/chat/history', async (req, res) => {
+  const { orderId } = req.query;
+  if (!orderId) return res.status(400).json({ error: 'orderId required' });
+  const messages = await ChatMessage.find({ orderId }).sort({ time: 1 });
+  res.json({ success: true, messages });
+});
+
 const server = http.createServer(app);
 initSocket(server);
+
+// Truyền io vào app locals để dùng trong REST API
+app.set('io', getIO());
 
 server.listen(3000, () => console.log('Server running on port 3000 (with socket.io)'));
