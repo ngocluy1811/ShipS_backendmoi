@@ -11,7 +11,7 @@ import requests
 app = Flask(__name__)
 CORS(app)
 ORS_API_KEY = '5b3ce3597851110001cf6248e3e8ef34ed2b4788a48fd77f04a52ca1'
-VIETMAP_API_KEY = os.environ.get('VIETMAP_API_KEY')
+VIETMAP_API_KEY = '7f9ef35866466886ebd24ba5091eda803732c8c76cde1b4a'
 geolocator = Nominatim(user_agent="ships_app", timeout=10)
 
 def try_geocode_vietmap(addr):

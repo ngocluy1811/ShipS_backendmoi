@@ -8,6 +8,7 @@ const Coupon = require('../models/Coupon');
 const User = require('../models/User');
 const { getOrderById, updateOrder } = require('../controllers/orderController');
 const requireAuth = require('../middleware/authenticateToken');
+const { emitOrderClaimed } = require('../socket');
 
 router.post('/', async (req, res) => {
   try {
@@ -351,7 +352,37 @@ router.post('/:order_id/claim', requireAuth(['shipper']), async (req, res) => {
     order.updated_at = new Date();
     order.claimed_at = new Date(); // Thời điểm shipper nhận đơn
 
+    // Thêm vào timeline
+    if (!Array.isArray(order.timeline)) order.timeline = [];
+    order.timeline.push({
+      status: 'preparing',
+      time: new Date(),
+      shipper_id: shipper_id,
+      description: 'Đơn hàng đang được chuẩn bị để giao cho shipper'
+    });
+
     await order.save();
+
+    // Emit event order_claimed
+    emitOrderClaimed(order.order_id, shipper.name, order.status, order.claimed_at);
+
+    // Emit event order_status_updated to notify status change
+    const io = require('../socket').getIO();
+    if (io) {
+      io.to(order_id).emit('order_status_updated', {
+        order_id,
+        status: order.status,
+        updated_at: order.updated_at,
+        timeline: order.timeline
+      });
+      io.to('orders').emit('order_status_updated', {
+        order_id,
+        status: order.status,
+        updated_at: order.updated_at,
+        timeline: order.timeline
+      });
+      console.log('[SOCKET] Emitted order_status_updated for order:', order_id, 'and to orders room');
+    }
 
     res.json({ 
       message: 'Nhận đơn thành công!', 
@@ -365,6 +396,28 @@ router.post('/:order_id/claim', requireAuth(['shipper']), async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// REST API gửi chat message qua socket.io
+router.post('/chat/message', (req, res) => {
+  const io = req.app.get('io');
+  const { orderId, sender, content } = req.body;
+  if (!orderId || !sender || !content) {
+    return res.status(400).json({ error: 'orderId, sender, content required' });
+  }
+  const msg = {
+    id: Date.now().toString(),
+    orderId,
+    sender,
+    content,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    status: 'sent',
+    type: 'text'
+  };
+  if (io) {
+    io.to(orderId).emit('chat_message', msg);
+  }
+  res.json({ success: true, message: msg });
 });
 
 module.exports = router;
