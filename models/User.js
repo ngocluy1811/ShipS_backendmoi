@@ -27,6 +27,9 @@ const userSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  vehicleType: { type: String, default: '' },      // Loại xe
+  vehicleNumber: { type: String, default: '' },    // Biển số xe
+  citizenId: { type: String, default: '' },        // Căn cước công dân
   address: {
     type: String,
     required: true,

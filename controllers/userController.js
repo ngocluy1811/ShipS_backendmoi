@@ -52,8 +52,7 @@ router.get('/', authenticateToken(['admin', 'staff']), async (req, res) => {
 // Đăng ký user mới
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, fullName, phoneNumber, address, role } = req.body;
-
+    const { email, password, fullName, phoneNumber, address, role, vehicleType, vehicleNumber, citizenId } = req.body;
     if (!email || !password || !fullName || !phoneNumber || !address || !role) {
       return res.status(400).json({ error: 'Vui lòng cung cấp đầy đủ thông tin.' });
     }
@@ -108,8 +107,29 @@ router.post('/register', async (req, res) => {
         message: 'Đăng ký thành công. Vui lòng kiểm tra email để xác thực tài khoản.',
         email
       });
+    } else if (role === 'shipper') {
+      // Đăng ký shipper: active luôn, không cần OTP, lưu thêm thông tin xe và căn cước
+      const user = new User({
+        user_id: `user_${Date.now()}`,
+        email,
+        password: hashedPassword,
+        fullName,
+        phoneNumber,
+        address,
+        role,
+        isVerified: true,
+        active: true,
+        vehicleType: vehicleType || '',
+        vehicleNumber: vehicleNumber || '',
+        citizenId: citizenId || ''
+      });
+      await user.save();
+      return res.json({
+        message: 'Đăng ký shipper thành công. Tài khoản đã được kích hoạt.',
+        email
+      });
     } else {
-      // Đăng ký admin, staff, shipper: active luôn, không cần OTP
+      // Đăng ký admin, staff: không cần các trường xe/cccd
       const user = new User({
         user_id: `user_${Date.now()}`,
         email,
@@ -416,7 +436,7 @@ router.put('/change-password', authenticateToken(['customer', 'admin', 'staff', 
 // Lấy thông tin public của user theo user_id (không giới hạn quyền)
 router.get('/public/:user_id', async (req, res) => {
   try {
-    const user = await User.findOne({ user_id: req.params.user_id }).select('user_id fullName phoneNumber');
+    const user = await User.findOne({ user_id: req.params.user_id }).select('user_id fullName phoneNumber vehicleType vehicleNumber citizenId');
     if (!user) {
       return res.status(404).json({ error: 'Người dùng không tồn tại.' });
     }
