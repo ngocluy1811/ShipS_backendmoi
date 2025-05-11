@@ -5,7 +5,13 @@ const Order = require('../models/Order');
 
 router.post('/', async (req, res) => {
   try {
-    const { order_id, rating, comment } = req.body;
+    console.log('Received body:', req.body); // DEBUG
+    let { order_id, rating, comment, tags, images } = req.body;
+    // Nếu images là string (do lỗi body parser), ép về mảng
+    if (typeof images === 'string') {
+      try { images = JSON.parse(images); } catch { images = [images]; }
+    }
+    if (!Array.isArray(images)) images = [];
     if (!order_id || !rating) {
       return res.status(400).json({ error: 'Vui lòng cung cấp đầy đủ order_id và rating.' });
     }
@@ -19,10 +25,12 @@ router.post('/', async (req, res) => {
       customer_id: req.user.user_id,
       rating,
       comment,
+      tags: tags || [],
+      images: images || [],
       created_at: new Date()
     });
     await ratingRecord.save();
-    res.json({ message: 'Tạo đánh giá thành công.' });
+    res.json({ message: 'Tạo đánh giá thành công.', rating: ratingRecord });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

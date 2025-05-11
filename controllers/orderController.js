@@ -7,6 +7,7 @@ const UserAddress = require('../models/UserAddress');
 const OrderItem = require('../models/OrderItem');
 const Coupon = require('../models/Coupon');
 const User = require('../models/User');
+const Rating = require('../models/Rating');
 
 // Hàm tính khoảng cách thực tế bằng Google Maps API
 const calculateDistance = async (pickupAddress, deliveryAddress) => {
@@ -585,6 +586,15 @@ const getOrderById = async (req, res) => {
           }
         }
       }
+    }
+
+    // Lấy thông tin đánh giá nếu có
+    const ratingDoc = await Rating.findOne({ order_id: order.order_id });
+    if (ratingDoc) {
+      order.rating = ratingDoc.rating;
+      order.rating_comment = ratingDoc.comment;
+      order.rating_tags = ratingDoc.tags || [];
+      order.rating_images = ratingDoc.images || [];
     }
 
     res.json(order);
