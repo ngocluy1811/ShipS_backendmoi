@@ -499,6 +499,7 @@ app.post('/api/track/update-location', async (req, res) => {
 app.post('/api/chat/message', async (req, res) => {
   const io = req.app.get('io');
   const { orderId, sender, content, type = 'text', fileUrl } = req.body;
+  console.log('[API] Nhận tin nhắn:', req.body);
   if (!orderId || !sender || (!content && !fileUrl)) {
     return res.status(400).json({ error: 'orderId, sender, content or fileUrl required' });
   }
@@ -511,8 +512,10 @@ app.post('/api/chat/message', async (req, res) => {
     time: new Date()
   };
   // Lưu vào DB
-  await ChatMessage.create(msg);
-  if (io) {
+  const savedMsg = await ChatMessage.create(msg);
+  console.log('[API] Đã lưu vào DB:', savedMsg);
+  if (io && orderId) {
+    console.log('[SOCKET] Emit chat_message to room:', orderId, msg);
     io.to(orderId).emit('chat_message', msg);
   }
   res.json({ success: true, message: msg });

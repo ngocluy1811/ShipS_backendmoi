@@ -14,6 +14,8 @@ function initSocket(server) {
   });
 
   io.on('connection', (socket) => {
+    console.log('[SOCKET] New client connected:', socket.id);
+
     socket.on('register', (user_id) => {
       userSockets[user_id] = socket.id;
       console.log('[SOCKET] User registered:', user_id, '->', socket.id);
@@ -37,6 +39,7 @@ function initSocket(server) {
     });
 
     socket.on('disconnect', () => {
+      console.log('[SOCKET] Client disconnected:', socket.id);
       for (const [user_id, id] of Object.entries(userSockets)) {
         if (id === socket.id) {
           delete userSockets[user_id];
@@ -136,6 +139,45 @@ function initSocket(server) {
         io.to(msg.orderId).emit('chat_message', msg);
       }
     });
+
+    // Video call signaling
+    socket.on('video_call_request', ({ orderId, from }) => {
+      // Gửi yêu cầu gọi tới room (trừ người gọi)
+      socket.to(orderId).emit('video_call_request', { from });
+    });
+    socket.on('video_call_accept', ({ orderId }) => {
+      socket.to(orderId).emit('video_call_accept');
+    });
+    socket.on('video_call_reject', ({ orderId }) => {
+      socket.to(orderId).emit('video_call_reject');
+    });
+    socket.on('video_call_busy', ({ orderId }) => {
+      socket.to(orderId).emit('video_call_busy');
+    });
+    socket.on('video_offer', ({ orderId, offer }) => {
+      socket.to(orderId).emit('video_offer', { offer });
+    });
+    socket.on('video_answer', ({ orderId, answer }) => {
+      socket.to(orderId).emit('video_answer', { answer });
+    });
+    socket.on('video_ice_candidate', ({ orderId, candidate }) => {
+      socket.to(orderId).emit('video_ice_candidate', { candidate });
+    });
+    socket.on('video_call_end', ({ orderId }) => {
+      socket.to(orderId).emit('video_call_end', {});
+    });
+  });
+}
+
+// Thêm hàm emit order_claimed
+function emitOrderClaimed(orderId, shipperName, status, claimedAt) {
+  if (!io) return;
+  console.log('[SOCKET] Emitting order_claimed:', { orderId, shipperName, status, claimedAt });
+  io.to('orders').emit('order_claimed', {
+    orderId,
+    shipperName,
+    status,
+    claimedAt
   });
 }
 
@@ -154,4 +196,4 @@ function getIO() {
   return io;
 }
 
-module.exports = { initSocket, sendNotificationToUser, getIO }; 
+module.exports = { initSocket, sendNotificationToUser, getIO, emitOrderClaimed }; 
