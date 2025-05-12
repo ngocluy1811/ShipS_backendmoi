@@ -28,7 +28,12 @@ function initSocket(server) {
 
     socket.on('join_orders_room', () => {
       socket.join('orders');
-      console.log('[SOCKET] Socket', socket.id, 'joined room orders');
+      console.log('[SOCKET] Admin joined orders room');
+    });
+
+    socket.on('join_warehouse_room', (warehouse_id) => {
+      socket.join(`warehouse_${warehouse_id}`);
+      console.log('[SOCKET] Admin joined warehouse room:', warehouse_id);
     });
 
     socket.on('unregister', (user_id) => {
