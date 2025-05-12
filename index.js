@@ -45,6 +45,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://nndminh03:psrMirsKkv1
 module.exports = mongoose;
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cors({
   origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -392,7 +393,7 @@ const userCouponRouter = require('./controllers/userCouponController');
 const couponRouter = require('./controllers/couponController');
 const notificationRouter = require('./routes/notificationRoutes');
 const ratingRouter = require('./controllers/ratingController');
-const orderRouter = require('./routes/orderRoutes');
+const orderSearchRouter = require('./routes/orderSearchRoute');
 const orderItemRouter = require('./controllers/orderItemController');
 const warehouseRouter = require('./controllers/warehouseController');
 const carTransportRouter = require('./controllers/carTransportController');
@@ -417,7 +418,8 @@ app.use('/api/user-coupons', authenticateToken(['customer', 'admin', 'staff']), 
 app.use('/api/coupons', authenticateToken(['admin']), couponRouter);
 app.use('/api/notifications', authenticateToken(['admin', 'staff', 'customer', 'shipper']), notificationRouter);
 app.use('/api/ratings', authenticateToken(['customer']), ratingRouter);
-app.use('/api/orders', authenticateToken(['admin', 'staff', 'customer', 'shipper']), orderRouter);
+app.use('/api/orders/search', orderSearchRouter);
+app.use('/api/orders', authenticateToken(['admin', 'staff', 'customer', 'shipper']), require('./routes/orderRoutes'));
 app.use('/api/order-items', authenticateToken(['admin', 'staff', 'customer']), orderItemRouter);
 app.use('/api/warehouses', authenticateToken(['admin', 'staff', 'customer']), warehouseRouter);
 app.use('/api/cars', authenticateToken(['admin']), carTransportRouter);

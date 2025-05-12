@@ -6,6 +6,8 @@ const ratingSchema = new mongoose.Schema({
   customer_id: { type: String, required: true },
   rating: { type: Number, required: true },
   comment: { type: String },
+  tags: { type: [String], default: [] },
+  images: { type: [String], default: [] },
   created_at: { type: Date, default: Date.now }
 });
 

@@ -21,10 +21,10 @@ router.post('/', async (req, res) => {
       order_items,
       service_type,
       coupon_id,
-      service_fee,
       is_suburban,
       estimate_time,
       pickup_time_suggestion,
+      order_value,
       payment_method,
       payment_status
     } = req.body;
@@ -55,11 +55,39 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Kho đã đầy.' });
     }
 
-    const pickupAddress = await UserAddress.findOne({ address_id: pickup_address_id });
-    const deliveryAddress = await UserAddress.findOne({ address_id: delivery_address_id });
-    if (!pickupAddress || !deliveryAddress) {
-      return res.status(404).json({ error: 'Địa chỉ không tồn tại.' });
+    // Hàm kiểm tra trường hợp chỉ có tiền tố hoặc thiếu
+    function isValidField(val) {
+      if (!val || !val.trim()) return false;
+      const invalidPrefixes = ['Huyện', 'Quận', 'Phường', 'Tỉnh', 'Thành phố', 'Xã'];
+      return !invalidPrefixes.some(prefix => val.trim() === prefix);
     }
+    // Validate pickup_address
+    let pickupData = { ...req.body.pickup_address };
+    ['name', 'phone', 'street', 'ward', 'district', 'city'].forEach(f => {
+      if (!isValidField(pickupData[f])) {
+        pickupData[f] = '';
+      }
+    });
+    const missingPickupFields = ['name', 'phone', 'street', 'ward', 'district', 'city'].filter(f => !isValidField(pickupData[f]));
+    if (missingPickupFields.length > 0) {
+      return res.status(400).json({ error: 'Thiếu hoặc sai thông tin người gửi: ' + missingPickupFields.join(', ') });
+    }
+    // Validate delivery_address
+    let deliveryData = { ...req.body.delivery_address };
+    ['name', 'phone', 'street', 'ward', 'district', 'city'].forEach(f => {
+      if (!isValidField(deliveryData[f])) {
+        deliveryData[f] = '';
+      }
+    });
+    const missingDeliveryFields = ['name', 'phone', 'street', 'ward', 'district', 'city'].filter(f => !isValidField(deliveryData[f]));
+    if (missingDeliveryFields.length > 0) {
+      return res.status(400).json({ error: 'Thiếu hoặc sai thông tin người nhận: ' + missingDeliveryFields.join(', ') });
+    }
+    // Bổ sung email, note nếu có
+    if (req.body.pickup_address?.email) pickupData.email = req.body.pickup_address.email;
+    if (req.body.pickup_address?.note) pickupData.note = req.body.pickup_address.note;
+    if (req.body.delivery_address?.email) deliveryData.email = req.body.delivery_address.email;
+    if (req.body.delivery_address?.note) deliveryData.note = req.body.delivery_address.note;
 
     // Lấy các trường phí từ FE gửi lên (nếu có)
     const shipping_fee = typeof req.body.shipping_fee === 'number' ? req.body.shipping_fee : 0;
@@ -114,27 +142,9 @@ router.post('/', async (req, res) => {
       customer_id,
       warehouse_id,
       pickup_address_id,
-      pickup_address: {
-        name: pickupAddress.name,
-        phone: pickupAddress.phone,
-        street: pickupAddress.street,
-        ward: pickupAddress.ward,
-        district: pickupAddress.district,
-        city: pickupAddress.city,
-        email: pickupAddress.email || '',
-        note: pickupAddress.note || ''
-      },
+      pickup_address: pickupData,
       delivery_address_id,
-      delivery_address: {
-        name: deliveryAddress.name,
-        phone: deliveryAddress.phone,
-        street: deliveryAddress.street,
-        ward: deliveryAddress.ward,
-        district: deliveryAddress.district,
-        city: deliveryAddress.city,
-        email: deliveryAddress.email || '',
-        note: deliveryAddress.note || ''
-      },
+      delivery_address: deliveryData,
       weight,
       dimensions,
       service_type,
@@ -149,7 +159,7 @@ router.post('/', async (req, res) => {
       updated_at: new Date(),
       cost_details,
       coupon_code: req.body.coupon_code || '',
-      order_value: req.body.order_value || 0,
+      order_value: order_value || 0,
     });
 
     const savedOrderItems = [];
@@ -418,6 +428,35 @@ router.post('/chat/message', (req, res) => {
     io.to(orderId).emit('chat_message', msg);
   }
   res.json({ success: true, message: msg });
+});
+
+// Tìm kiếm đơn hàng theo nhiều trường
+router.get('/search', async (req, res) => {
+  try {
+    const q = req.query.q || '';
+    if (!q) return res.json([]);
+    const regex = new RegExp(q, 'i');
+    const orders = await Order.find({
+      $or: [
+        { order_id: regex },
+        { 'pickup_address.name': regex },
+        { 'pickup_address.phone': regex },
+        { 'pickup_address.street': regex },
+        { 'pickup_address.ward': regex },
+        { 'pickup_address.district': regex },
+        { 'pickup_address.city': regex },
+        { 'delivery_address.name': regex },
+        { 'delivery_address.phone': regex },
+        { 'delivery_address.street': regex },
+        { 'delivery_address.ward': regex },
+        { 'delivery_address.district': regex },
+        { 'delivery_address.city': regex }
+      ]
+    }).limit(10);
+    res.json(orders);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

@@ -18,15 +18,15 @@ exports.getShippingCosts = async (req, res) => {
       createdAt: { $gte: startDate, $lte: now },
     });
 
-    const totalShippingCost = orders.reduce((sum, order) => sum + (order.totalFee || 0), 0);
-    const paidOrders = orders.filter(order => order.paymentMethod && order.status === 'delivered');
-    const totalPaid = paidOrders.reduce((sum, order) => sum + (order.totalFee || 0), 0);
+    // Chỉ lấy đơn đã giao thành công
+    const deliveredOrders = orders.filter(order => order.status === 'delivered' || order.status === 'Đã giao');
+    const totalShippingCost = deliveredOrders.reduce((sum, order) => sum + (order.totalFee || 0), 0);
+    const totalOrders = deliveredOrders.length;
     const pendingOrders = orders.filter(order => order.status === 'pending').length;
 
     res.status(200).json({
       totalShippingCost,
-      totalPaid,
-      totalOrders: orders.length,
+      totalOrders,
       pendingOrders,
     });
   } catch (error) {

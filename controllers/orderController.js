@@ -7,6 +7,7 @@ const UserAddress = require('../models/UserAddress');
 const OrderItem = require('../models/OrderItem');
 const Coupon = require('../models/Coupon');
 const User = require('../models/User');
+const Rating = require('../models/Rating');
 
 // Hàm tính khoảng cách thực tế bằng Google Maps API
 const calculateDistance = async (pickupAddress, deliveryAddress) => {
@@ -233,32 +234,34 @@ router.post('/', async (req, res) => {
       return res.status(404).json({ error: 'Địa chỉ không tồn tại.' });
     }
 
-    // Nếu thiếu trường nào ở delivery_address, tự động lấy từ deliveryAddress (UserAddress)
-    let deliveryData = { ...req.body.delivery_address };
-    ['name', 'phone', 'street', 'ward', 'district', 'city'].forEach(f => {
-      if (!deliveryData[f] || !deliveryData[f].trim()) {
-        deliveryData[f] = deliveryAddress[f] || '';
-      }
-    });
-    // Nếu vẫn còn thiếu trường nào, trả về lỗi
-    const missingDeliveryFields = ['name', 'phone', 'street', 'ward', 'district', 'city'].filter(f => !deliveryData[f] || !deliveryData[f].trim());
-    if (missingDeliveryFields.length > 0) {
-      console.error('Thiếu thông tin người nhận:', missingDeliveryFields);
-      return res.status(400).json({ error: 'Thiếu thông tin người nhận: ' + missingDeliveryFields.join(', ') });
+    // Hàm kiểm tra trường hợp chỉ có tiền tố hoặc thiếu
+    function isValidField(val) {
+      if (!val || !val.trim()) return false;
+      const invalidPrefixes = ['Huyện', 'Quận', 'Phường', 'Tỉnh', 'Thành phố', 'Xã'];
+      return !invalidPrefixes.some(prefix => val.trim() === prefix);
     }
-    // Tương tự cho pickup_address
+    // Validate pickup_address
     let pickupData = { ...req.body.pickup_address };
     ['name', 'phone', 'street', 'ward', 'district', 'city'].forEach(f => {
-      if (!pickupData[f] || !pickupData[f].trim()) {
-        pickupData[f] = pickupAddress[f] || '';
+      if (!isValidField(pickupData[f])) {
+        pickupData[f] = '';
       }
     });
-    const missingPickupFields = ['name', 'phone', 'street', 'ward', 'district', 'city'].filter(f => !pickupData[f] || !pickupData[f].trim());
+    const missingPickupFields = ['name', 'phone', 'street', 'ward', 'district', 'city'].filter(f => !isValidField(pickupData[f]));
     if (missingPickupFields.length > 0) {
-      console.error('Thiếu thông tin người gửi:', missingPickupFields);
-      return res.status(400).json({ error: 'Thiếu thông tin người gửi: ' + missingPickupFields.join(', ') });
+      return res.status(400).json({ error: 'Thiếu hoặc sai thông tin người gửi: ' + missingPickupFields.join(', ') });
     }
-
+    // Validate delivery_address
+    let deliveryData = { ...req.body.delivery_address };
+    ['name', 'phone', 'street', 'ward', 'district', 'city'].forEach(f => {
+      if (!isValidField(deliveryData[f])) {
+        deliveryData[f] = '';
+      }
+    });
+    const missingDeliveryFields = ['name', 'phone', 'street', 'ward', 'district', 'city'].filter(f => !isValidField(deliveryData[f]));
+    if (missingDeliveryFields.length > 0) {
+      return res.status(400).json({ error: 'Thiếu hoặc sai thông tin người nhận: ' + missingDeliveryFields.join(', ') });
+    }
     // Bổ sung email, note nếu có
     if (req.body.pickup_address?.email) pickupData.email = req.body.pickup_address.email;
     if (req.body.pickup_address?.note) pickupData.note = req.body.pickup_address.note;
@@ -562,7 +565,10 @@ const getOrderById = async (req, res) => {
           email: shipper.email || '',
           address: shipper.address || '',
           warehouse_id: shipper.warehouse_id || '',
-          vehicle_info: shipper.vehicle_info || {}
+          vehicle_info: shipper.vehicle_info || {},
+          vehicleType: shipper.vehicleType || '',
+          vehicleNumber: shipper.vehicleNumber || '',
+          citizenId: shipper.citizenId || ''
         };
       } else {
         console.warn('Không tìm thấy shipper với user_id:', order.shipper_id);
@@ -585,6 +591,15 @@ const getOrderById = async (req, res) => {
           }
         }
       }
+    }
+
+    // Lấy thông tin đánh giá nếu có
+    const ratingDoc = await Rating.findOne({ order_id: order.order_id });
+    if (ratingDoc) {
+      order.rating = ratingDoc.rating;
+      order.rating_comment = ratingDoc.comment;
+      order.rating_tags = ratingDoc.tags || [];
+      order.rating_images = ratingDoc.images || [];
     }
 
     res.json(order);
