@@ -9,7 +9,8 @@ const app = express();
 const http = require('http');
 const { initSocket, getIO } = require('./socket');
 const ChatMessage = require('./models/ChatMessage');
-
+const dashboardRoutes = require('./routes/dashboardRoutes');
+const Order = require('./models/Order');
 
 mongoose.set('strictQuery', true);
 
@@ -421,7 +422,7 @@ app.use('/api/ratings', authenticateToken(['customer']), ratingRouter);
 app.use('/api/orders/search', orderSearchRouter);
 app.use('/api/orders', authenticateToken(['admin', 'staff', 'customer', 'shipper']), require('./routes/orderRoutes'));
 app.use('/api/order-items', authenticateToken(['admin', 'staff', 'customer']), orderItemRouter);
-app.use('/api/warehouses', authenticateToken(['admin', 'staff', 'customer']), warehouseRouter);
+app.use('/api/warehouses', authenticateToken(['admin', 'staff', 'customer', 'shipper']), warehouseRouter);
 app.use('/api/cars', authenticateToken(['admin']), carTransportRouter);
 app.use('/api/group-orders', authenticateToken(['admin']), groupOrderRouter);
 app.use('/api/transfer-scripts', authenticateToken(['admin']), transferScriptRouter);
@@ -433,7 +434,7 @@ app.use('/api/delivery', deliveryRouter);
 app.use('/api/vietmap', vietmapRoutes);
 app.use('/uploads', express.static('uploads'));
 app.use('/api/upload', uploadRouter);
-
+app.use('/api/dashboard', dashboardRoutes);
 // Thêm route tạo thanh toán Momo giả lập trực tiếp vào app
 // app.post('/api/momo/create-payment', (req, res) => {
 //   // TODO: Tích hợp Momo thực tế ở đây
@@ -536,5 +537,25 @@ initSocket(server);
 
 // Truyền io vào app locals để dùng trong REST API
 app.set('io', getIO());
+
+// Lắng nghe thay đổi trên collection Order (Change Stream)
+Order.watch().on('change', data => {
+  if (data.operationType === 'insert') {
+    const order = data.fullDocument;
+    const io = getIO();
+    if (io) {
+      io.to('orders').emit('new_order', {
+        order_id: order.order_id,
+        created_at: order.created_at,
+        status: order.status || 'pending',
+        customer_id: order.customer_id,
+        total_fee: order.total_fee,
+        service_type: order.service_type,
+        item_type: order.item_type
+      });
+      console.log('[SOCKET][ChangeStream] Emitted new_order to all admins:', order.order_id, order.customer_id);
+    }
+  }
+});
 
 server.listen(3000, () => console.log('Server running on port 3000 (with socket.io)'));

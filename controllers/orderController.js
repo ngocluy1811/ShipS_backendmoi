@@ -8,6 +8,7 @@ const OrderItem = require('../models/OrderItem');
 const Coupon = require('../models/Coupon');
 const User = require('../models/User');
 const Rating = require('../models/Rating');
+const io = require('socket.io');
 
 // Hàm tính khoảng cách thực tế bằng Google Maps API
 const calculateDistance = async (pickupAddress, deliveryAddress) => {
@@ -186,6 +187,9 @@ router.post('/calculate-shipping-fee', async (req, res) => {
 // Tạo đơn hàng
 router.post('/', async (req, res) => {
   try {
+    // Đặt log này ngay đầu hàm để xác nhận route thực sự được gọi
+    console.log('[ORDER] Nhận request tạo đơn:', req.body);
+
     console.log('Order create body:', JSON.stringify(req.body, null, 2));
     const {
       warehouse_id,
@@ -419,8 +423,24 @@ router.post('/', async (req, res) => {
     order.order_items = savedOrderItems;
     await order.save();
 
+    const { getIO } = require('../socket');
+    const io = getIO();
+    if (io) {
+      io.to('orders').emit('new_order', {
+        order_id: order.order_id,
+        created_at: order.created_at,
+        status: order.status || 'pending',
+        customer_id: order.customer_id,
+        total_fee: order.total_fee,
+        service_type: order.service_type,
+        item_type: order.item_type
+      });
+      console.log('[SOCKET] Emitted new_order to all admins:', order.order_id, order.customer_id);
+    }
+
     warehouse.current_stock += 1;
     await warehouse.save();
+
     res.json({
       message: 'Tạo đơn hàng thành công.',
       order_id: order.order_id,

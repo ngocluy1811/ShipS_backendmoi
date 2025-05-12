@@ -32,4 +32,25 @@ exports.getShippingCosts = async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Lỗi khi lấy dữ liệu chi phí vận chuyển.' });
   }
+};
+
+exports.getAdminDashboardStats = async (req, res) => {
+  try {
+    const orders = await Order.find({});
+    const totalOrders = orders.length;
+    const deliveredOrders = orders.filter(order => order.status === 'delivered' || order.status === 'Đã giao').length;
+    const canceledOrders = orders.filter(order => order.status === 'canceled' || order.status === 'Đã hủy').length;
+    const totalShippingCost = orders
+      .filter(order => order.status === 'delivered' || order.status === 'Đã giao')
+      .reduce((sum, order) => sum + (order.totalFee || 0), 0);
+
+    res.status(200).json({
+      totalOrders,
+      deliveredOrders,
+      canceledOrders,
+      totalShippingCost,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Lỗi khi lấy dữ liệu dashboard.' });
+  }
 }; 
