@@ -787,13 +787,22 @@ router.post('/:order_id/assign-shipper', async (req, res) => {
     const { order_id } = req.params;
     const { shipper_id } = req.body;
 
-    if (!['admin', 'staff'].includes(req.user.role)) {
+    if (!['admin', 'staff', 'shipper'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Không có quyền gán shipper cho đơn hàng.' });
     }
 
     const order = await Order.findOne({ order_id });
     if (!order) {
       return res.status(404).json({ error: 'Đơn hàng không tồn tại.' });
+    }
+
+    if (req.user.role === 'shipper') {
+      if (order.shipper_id) {
+        return res.status(400).json({ error: 'Đơn hàng đã có shipper.' });
+      }
+      if (req.user.user_id !== shipper_id) {
+        return res.status(403).json({ error: 'Shipper chỉ được gán chính mình vào đơn hàng.' });
+      }
     }
 
     const shipper = await User.findOne({ user_id: shipper_id, role: 'shipper' });
