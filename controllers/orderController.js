@@ -782,7 +782,7 @@ router.put('/:order_id/status', async (req, res) => {
   }
 });
 
-router.post('/:order_id/assign-shipper', async (req, res) => {
+const assignShipperToOrder = async (req, res) => {
   try {
     const { order_id } = req.params;
     const { shipper_id } = req.body;
@@ -821,9 +821,10 @@ router.post('/:order_id/assign-shipper', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+};
 
 module.exports = {
   getOrderById,
-  updateOrder
+  updateOrder,
+  assignShipperToOrder
 };
