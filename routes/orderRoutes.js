@@ -6,7 +6,7 @@ const UserAddress = require('../models/UserAddress');
 const OrderItem = require('../models/OrderItem');
 const Coupon = require('../models/Coupon');
 const User = require('../models/User');
-const { getOrderById, updateOrder } = require('../controllers/orderController');
+const { getOrderById, updateOrder, assignShipperToOrder } = require('../controllers/orderController');
 const requireAuth = require('../middleware/authenticateToken');
 const { emitOrderClaimed } = require('../socket');
 
@@ -458,5 +458,7 @@ router.get('/search', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+router.post('/:order_id/assign-shipper', requireAuth(['admin', 'staff', 'shipper']), assignShipperToOrder);
 
 module.exports = router;
