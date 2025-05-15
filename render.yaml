@@ -14,14 +14,6 @@ services:
         value: your_super_secret_jwt_key_2024
       - key: CORS_ORIGIN
         value: https://ships-admin.onrender.com
-
-  - type: web
-    name: ships-distance-calculator
-    env: docker
-    dockerfilePath: ./Dockerfile.python
-    envVars:
-      - key: MONGODB_URI
-        value: mongodb+srv://nndminh03:psrMirsKkv19Yia6@ships-cluster.guijyap.mongodb.net/ships_db
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: FLASK_APP
