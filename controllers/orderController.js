@@ -815,6 +815,7 @@ const assignShipperToOrder = async (req, res) => {
     }
 
     order.shipper_id = shipper_id;
+    order.status = 'delivering';
     await order.save();
 
     res.json({ message: 'Gán shipper vào đơn hàng thành công.' });
