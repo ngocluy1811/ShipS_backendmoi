@@ -8,6 +8,12 @@ const NotificationTemplate = require('../models/NotificationTemplate');
 const NotificationList = require('../models/NotificationList');
 const NotificationAuditLog = require('../models/NotificationAuditLog');
 
+// Sau mỗi thao tác tạo, xóa, cập nhật notification, emit event realtime
+function emitStatsChanged(req) {
+  const io = req.app.get('io');
+  if (io) io.emit('notification-stats-changed');
+}
+
 router.post('/', authenticateToken(['admin']), async (req, res) => {
   try {
     const { user_id, title, content, schedule } = req.body;
@@ -32,6 +38,7 @@ router.post('/', authenticateToken(['admin']), async (req, res) => {
         notifications.push(notification);
         sendNotificationToUser(user.user_id, notification);
       }
+      emitStatsChanged(req);
       return res.json({ message: 'Đã gửi thông báo cho tất cả người dùng.' });
     } else {
       // Gửi cho 1 user
@@ -46,6 +53,7 @@ router.post('/', authenticateToken(['admin']), async (req, res) => {
       });
       await notification.save();
       sendNotificationToUser(user_id, notification);
+      emitStatsChanged(req);
       return res.json({ message: 'Tạo thông báo thành công.' });
     }
   } catch (error) {
@@ -234,6 +242,7 @@ router.post('/templates/:id/send', authenticateToken(['admin']), async (req, res
       });
       await notification.save();
       sendNotificationToUser(user_id, notification);
+      emitStatsChanged(req);
       return res.json({ message: 'Đã gửi thông báo cho user.' });
     } else if (audience && audience !== 'all') {
       // Gửi cho đúng đối tượng (role)
@@ -247,6 +256,7 @@ router.post('/templates/:id/send', authenticateToken(['admin']), async (req, res
         await notification.save();
         sendNotificationToUser(user.user_id, notification);
       }
+      emitStatsChanged(req);
       return res.json({ message: `Đã gửi thông báo cho tất cả ${audience}.`, count: users.length });
     } else {
       // Gửi cho tất cả user
@@ -260,6 +270,7 @@ router.post('/templates/:id/send', authenticateToken(['admin']), async (req, res
         await notification.save();
         sendNotificationToUser(user.user_id, notification);
       }
+      emitStatsChanged(req);
       return res.json({ message: 'Đã gửi thông báo cho tất cả người dùng.' });
     }
   } catch (error) {
@@ -283,6 +294,7 @@ router.delete('/notifications/:id', authenticateToken(['admin']), async (req, re
       return res.status(404).json({ error: 'Không tìm thấy thông báo.' });
     }
     res.json({ message: 'Đã xóa thông báo.' });
+    emitStatsChanged(req);
   } catch (err) {
     console.error('Lỗi khi xóa notification:', err);
     res.status(500).json({ error: err.message });
@@ -477,6 +489,32 @@ router.get('/audit-log', async (req, res) => {
       .skip(skip)
       .limit(limit);
     res.json({ data: logs, total });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API thống kê notification cho dashboard
+router.get('/stats', authenticateToken(['admin']), async (req, res) => {
+  try {
+    const total = await Notification.countDocuments();
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const sentToday = await Notification.countDocuments({ sent_at: { $gte: today } });
+    const activeUsers = await Notification.distinct('user_id', { created_at: { $gte: new Date(Date.now() - 24*60*60*1000) } });
+    // Đã lên lịch: status = 'scheduled' hoặc có schedule khác null
+    const scheduled = await Notification.countDocuments({ $or: [ { status: 'scheduled' }, { schedule: { $ne: null } } ] });
+    // Thành công: status là 'unread', 'read', 'sent'
+    const sent = await Notification.countDocuments({ status: { $in: ['unread', 'read', 'sent'] } });
+    const failed = await Notification.countDocuments({ status: 'failed' });
+    const successRate = total > 0 ? ((sent / total) * 100).toFixed(1) : '0.0';
+    res.json({
+      total,
+      sentToday,
+      activeUsers: activeUsers.length,
+      scheduled,
+      successRate
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
