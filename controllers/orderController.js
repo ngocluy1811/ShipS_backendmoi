@@ -502,12 +502,14 @@ const getOrderById = async (req, res) => {
     const query = { order_id };
     if (req.user.role === 'customer') {
       query.customer_id = req.user.user_id;
+    } else if (req.user.role === 'shipper') {
+      query.shipper_id = req.user.user_id;
     } else if (req.user.role !== 'admin' && req.user.role !== 'staff') {
       return res.status(403).json({ error: 'Không có quyền truy cập.' });
     }
     const order = await Order.findOne(query).lean();
     if (!order) {
-      return res.status(404).json({ error: 'Đơn hàng không tồn tại.' });
+      return res.status(404).json({ error: 'Đơn hàng không tồn tại hoặc bạn không có quyền xem.' });
     }
 
     // Đảm bảo cost_details luôn có format chuẩn và đủ trường
