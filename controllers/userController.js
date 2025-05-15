@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const nodemailer = require('nodemailer');
+const UserActivity = require('../models/UserActivity');
 
 // Middleware để xác thực token (copy từ index.js để sử dụng cục bộ)
 const authenticateToken = (roles) => (req, res, next) => {
@@ -103,6 +104,12 @@ router.post('/register', async (req, res) => {
       global._otpMap = global._otpMap || {};
       global._otpMap[email] = { otp, expiry: Date.now() + 15 * 60 * 1000 };
 
+      await UserActivity.create({
+        userId: user.user_id,
+        action: 'Register',
+        details: `Tạo tài khoản với vai trò ${user.role}`
+      });
+
       return res.json({
         message: 'Đăng ký thành công. Vui lòng kiểm tra email để xác thực tài khoản.',
         email
@@ -124,6 +131,11 @@ router.post('/register', async (req, res) => {
         citizenId: citizenId || ''
       });
       await user.save();
+      await UserActivity.create({
+        userId: user.user_id,
+        action: 'Register',
+        details: `Tạo tài khoản với vai trò ${user.role}`
+      });
       return res.json({
         message: 'Đăng ký shipper thành công. Tài khoản đã được kích hoạt.',
         email
@@ -142,6 +154,11 @@ router.post('/register', async (req, res) => {
         active: true
       });
       await user.save();
+      await UserActivity.create({
+        userId: user.user_id,
+        action: 'Register',
+        details: `Tạo tài khoản với vai trò ${user.role}`
+      });
       return res.json({
         message: 'Đăng ký thành công. Tài khoản đã được kích hoạt.',
         email
@@ -190,6 +207,12 @@ router.post('/verify-otp', async (req, res) => {
     await user.save();
     // Xóa OTP khỏi memory
     delete global._otpMap[email];
+
+    await UserActivity.create({
+      userId: user.user_id,
+      action: 'VerifyOTP',
+      details: 'Xác thực tài khoản thành công'
+    });
 
     res.json({ message: 'Xác thực tài khoản thành công.' });
   } catch (error) {
@@ -241,6 +264,12 @@ router.post('/resend-otp', async (req, res) => {
     global._otpMap = global._otpMap || {};
     global._otpMap[email] = { otp, expiry: Date.now() + 15 * 60 * 1000 };
 
+    await UserActivity.create({
+      userId: user.user_id,
+      action: 'ResendOTP',
+      details: 'Gửi lại mã xác thực'
+    });
+
     res.json({ message: 'Đã gửi lại mã xác thực.' });
   } catch (error) {
     console.error('Resend OTP error:', error);
@@ -252,22 +281,22 @@ router.post('/resend-otp', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    
     if (!email || !password) {
       return res.status(400).json({ error: 'Vui lòng cung cấp email và mật khẩu.' });
     }
-
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({ error: 'Email hoặc mật khẩu không đúng.' });
     }
-
+    // Kiểm tra tài khoản bị khoá
+    if (user.isLocked) {
+      return res.status(403).json({ error: 'Tài khoản của bạn đã bị khóa, vui lòng liên hệ admin để mở khóa.' });
+    }
     // Check password
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       return res.status(401).json({ error: 'Email hoặc mật khẩu không đúng.' });
     }
-
     // Check if account is verified
     if (!user.isVerified) {
       return res.status(403).json({ 
@@ -275,7 +304,15 @@ router.post('/login', async (req, res) => {
         email: user.email
       });
     }
-
+    // Cập nhật lastLogin
+    user.lastLogin = new Date();
+    await user.save();
+    // Ghi log hoạt động
+    await UserActivity.create({
+      userId: user.user_id,
+      action: 'Login',
+      details: 'Đăng nhập hệ thống'
+    });
     // Generate JWT token
     const token = jwt.sign(
       { 
@@ -286,7 +323,6 @@ router.post('/login', async (req, res) => {
       process.env.JWT_SECRET || 'your_jwt_secret',
       { expiresIn: '24h' }
     );
-
     // Return user info (excluding sensitive data)
     const userInfo = {
       user_id: user.user_id,
@@ -296,7 +332,6 @@ router.post('/login', async (req, res) => {
       address: user.address,
       role: user.role
     };
-
     res.json({
       token,
       user: userInfo,
@@ -328,6 +363,12 @@ router.post('/assign-shipper', authenticateToken(['admin']), async (req, res) =>
     shipper.warehouse_id = warehouse_id;
     await shipper.save();
 
+    await UserActivity.create({
+      userId: shipper.user_id,
+      action: 'AssignShipper',
+      details: `Gán shipper vào kho với warehouse_id ${warehouse_id}`
+    });
+
     res.json({ message: 'Gán shipper vào kho thành công.' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -341,7 +382,9 @@ router.get('/me', authenticateToken(['customer', 'admin', 'staff', 'shipper']), 
     if (!user) {
       return res.status(404).json({ error: 'Người dùng không tồn tại.' });
     }
-
+    if (user.isLocked) {
+      return res.status(403).json({ error: 'Tài khoản của bạn đã bị khóa, vui lòng liên hệ admin để mở khóa.' });
+    }
     // Return user info (excluding sensitive data)
     const userInfo = {
       user_id: user.user_id,
@@ -378,6 +421,12 @@ router.put('/me', authenticateToken(['customer', 'admin', 'staff', 'shipper']), 
     if (address) user.address = address;
 
     await user.save();
+
+    await UserActivity.create({
+      userId: user.user_id,
+      action: 'Update',
+      details: 'Cập nhật thông tin người dùng'
+    });
 
     // Return updated user info
     const userInfo = {
@@ -426,6 +475,12 @@ router.put('/change-password', authenticateToken(['customer', 'admin', 'staff', 
     user.password = hashedPassword;
     await user.save();
 
+    await UserActivity.create({
+      userId: user.user_id,
+      action: 'ChangePassword',
+      details: 'Đổi mật khẩu'
+    });
+
     res.json({ message: 'Đổi mật khẩu thành công.' });
   } catch (error) {
     console.error('Change password error:', error);
@@ -446,4 +501,145 @@ router.get('/public/:user_id', async (req, res) => {
   }
 });
 
+// Lấy danh sách user (có phân trang, tìm kiếm, lọc)
+router.get('/list', async (req, res) => {
+  try {
+    const { search = '', role, status, page = 1, limit = 20 } = req.query;
+    const query = {};
+    if (search) {
+      query.$or = [
+        { fullName: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { user_id: { $regex: search, $options: 'i' } }
+      ];
+    }
+    if (role) query.role = role;
+    if (status === 'active') query.active = true;
+    if (status === 'inactive') query.active = false;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const users = await User.find(query).select('-password').skip(skip).limit(parseInt(limit));
+    const total = await User.countDocuments(query);
+    res.json({ users, total });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Lấy chi tiết user
+router.get('/:id', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('-password');
+    if (!user) return res.status(404).json({ error: 'Không tìm thấy user.' });
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Cập nhật user
+router.put('/:id', async (req, res) => {
+  try {
+    const { fullName, phoneNumber, address, role, active } = req.body;
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { fullName, phoneNumber, address, role, active },
+      { new: true }
+    ).select('-password');
+    if (!user) return res.status(404).json({ error: 'Không tìm thấy user.' });
+    await UserActivity.create({
+      userId: user.user_id,
+      action: 'Update',
+      details: 'Cập nhật thông tin người dùng'
+    });
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Xóa user
+router.delete('/:id', async (req, res) => {
+  try {
+    const user = await User.findByIdAndDelete(req.params.id);
+    if (!user) return res.status(404).json({ error: 'Không tìm thấy user.' });
+    await UserActivity.create({
+      userId: user.user_id,
+      action: 'Delete',
+      details: 'Xóa người dùng'
+    });
+    res.json({ message: 'Xóa user thành công.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Đổi trạng thái active/inactive
+router.patch('/:id/active', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: 'Không tìm thấy user.' });
+    user.active = !user.active;
+    await user.save();
+    await UserActivity.create({
+      userId: user.user_id,
+      action: 'ToggleActive',
+      details: `Chuyển trạng thái ${user.active ? 'Hoạt động' : 'Không hoạt động'}`
+    });
+    res.json({ active: user.active });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Lịch sử hoạt động user
+router.get('/:id/activity', async (req, res) => {
+  try {
+    const activities = await UserActivity.find({ userId: req.params.id }).sort({ timestamp: -1 }).limit(50);
+    res.json(activities);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Khóa tài khoản
+router.patch('/:id/lock', async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(req.params.id, { isLocked: true }, { new: true });
+    if (!user) return res.status(404).json({ error: 'Không tìm thấy user.' });
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Mở khóa tài khoản
+router.patch('/:id/unlock', async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(req.params.id, { isLocked: false }, { new: true });
+    if (!user) return res.status(404).json({ error: 'Không tìm thấy user.' });
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+// controllers/user.controller.js
+router.patch('/:id/verify', async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(req.params.id, { isVerified: true }, { new: true });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ message: 'User verified', user });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.patch('/:id/unverify', async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(req.params.id, { isVerified: false }, { new: true });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ message: 'User unverified', user });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 module.exports = router;

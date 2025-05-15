@@ -9,7 +9,6 @@ const User = require('../models/User');
 const { getOrderById, updateOrder } = require('../controllers/orderController');
 const requireAuth = require('../middleware/authenticateToken');
 const { emitOrderClaimed } = require('../socket');
-
 router.post('/', async (req, res) => {
   try {
     const {
@@ -436,7 +435,7 @@ router.get('/search', async (req, res) => {
     const q = req.query.q || '';
     if (!q) return res.json([]);
     const regex = new RegExp(q, 'i');
-    const orders = await Order.find({
+    const filter = {
       $or: [
         { order_id: regex },
         { 'pickup_address.name': regex },
@@ -452,10 +451,39 @@ router.get('/search', async (req, res) => {
         { 'delivery_address.district': regex },
         { 'delivery_address.city': regex }
       ]
-    }).limit(10);
+    };
+    if (req.query.customer_id) {
+      filter.customer_id = req.query.customer_id;
+    }
+    console.log('[DEBUG] /orders/search filter:', JSON.stringify(filter));
+    const orders = await Order.find(filter).limit(10);
     res.json(orders);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Thống kê số lượng đơn hàng theo tháng trong năm hiện tại
+router.get('/stats-by-month', async (req, res) => {
+  try {
+    const now = new Date();
+    const year = now.getFullYear();
+    // Lấy tất cả đơn hàng trong năm hiện tại
+    const orders = await Order.find({
+      created_at: {
+        $gte: new Date(`${year}-01-01T00:00:00.000Z`),
+        $lte: new Date(`${year}-12-31T23:59:59.999Z`)
+      }
+    });
+    // Đếm số lượng đơn theo từng tháng
+    const stats = Array(12).fill(0);
+    orders.forEach(order => {
+      const month = new Date(order.created_at).getMonth(); // 0-11
+      stats[month]++;
+    });
+    res.json({ year, stats });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
