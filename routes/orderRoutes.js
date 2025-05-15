@@ -196,7 +196,7 @@ router.post('/', async (req, res) => {
 
 router.get('/', async (req, res) => {
   try {
-    const { customer_id, shipper_id } = req.query;
+    const { customer_id, shipper_id, status } = req.query;
     const query = {};
     if (req.user.role === 'customer') {
       query.customer_id = req.user.user_id;
@@ -213,6 +213,9 @@ router.get('/', async (req, res) => {
       }
       query.shipper_id = shipper_id;
       query.warehouse_id = shipper.warehouse_id;
+    }
+    if (status) {
+      query.status = status;
     }
     const orders = await Order.find(query);
     res.json(orders);
