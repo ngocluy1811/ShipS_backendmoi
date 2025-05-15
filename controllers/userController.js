@@ -105,6 +105,7 @@ router.post('/register', async (req, res) => {
       global._otpMap[email] = { otp, expiry: Date.now() + 15 * 60 * 1000 };
 
       await UserActivity.create({
+        user: user._id,
         userId: user.user_id,
         action: 'Register',
         details: `Tạo tài khoản với vai trò ${user.role}`
@@ -132,6 +133,7 @@ router.post('/register', async (req, res) => {
       });
       await user.save();
       await UserActivity.create({
+        user: user._id,
         userId: user.user_id,
         action: 'Register',
         details: `Tạo tài khoản với vai trò ${user.role}`
@@ -155,6 +157,7 @@ router.post('/register', async (req, res) => {
       });
       await user.save();
       await UserActivity.create({
+        user: user._id,
         userId: user.user_id,
         action: 'Register',
         details: `Tạo tài khoản với vai trò ${user.role}`
@@ -209,6 +212,7 @@ router.post('/verify-otp', async (req, res) => {
     delete global._otpMap[email];
 
     await UserActivity.create({
+      user: user._id,
       userId: user.user_id,
       action: 'VerifyOTP',
       details: 'Xác thực tài khoản thành công'
@@ -265,6 +269,7 @@ router.post('/resend-otp', async (req, res) => {
     global._otpMap[email] = { otp, expiry: Date.now() + 15 * 60 * 1000 };
 
     await UserActivity.create({
+      user: user._id,
       userId: user.user_id,
       action: 'ResendOTP',
       details: 'Gửi lại mã xác thực'
@@ -309,6 +314,7 @@ router.post('/login', async (req, res) => {
     await user.save();
     // Ghi log hoạt động
     await UserActivity.create({
+      user: user._id,
       userId: user.user_id,
       action: 'Login',
       details: 'Đăng nhập hệ thống'
@@ -364,6 +370,7 @@ router.post('/assign-shipper', authenticateToken(['admin']), async (req, res) =>
     await shipper.save();
 
     await UserActivity.create({
+      user: shipper._id,
       userId: shipper.user_id,
       action: 'AssignShipper',
       details: `Gán shipper vào kho với warehouse_id ${warehouse_id}`
@@ -423,6 +430,7 @@ router.put('/me', authenticateToken(['customer', 'admin', 'staff', 'shipper']), 
     await user.save();
 
     await UserActivity.create({
+      user: user._id,
       userId: user.user_id,
       action: 'Update',
       details: 'Cập nhật thông tin người dùng'
@@ -476,6 +484,7 @@ router.put('/change-password', authenticateToken(['customer', 'admin', 'staff', 
     await user.save();
 
     await UserActivity.create({
+      user: user._id,
       userId: user.user_id,
       action: 'ChangePassword',
       details: 'Đổi mật khẩu'
@@ -547,6 +556,7 @@ router.put('/:id', async (req, res) => {
     ).select('-password');
     if (!user) return res.status(404).json({ error: 'Không tìm thấy user.' });
     await UserActivity.create({
+      user: user._id,
       userId: user.user_id,
       action: 'Update',
       details: 'Cập nhật thông tin người dùng'
@@ -563,6 +573,7 @@ router.delete('/:id', async (req, res) => {
     const user = await User.findByIdAndDelete(req.params.id);
     if (!user) return res.status(404).json({ error: 'Không tìm thấy user.' });
     await UserActivity.create({
+      user: user._id,
       userId: user.user_id,
       action: 'Delete',
       details: 'Xóa người dùng'
@@ -581,6 +592,7 @@ router.patch('/:id/active', async (req, res) => {
     user.active = !user.active;
     await user.save();
     await UserActivity.create({
+      user: user._id,
       userId: user.user_id,
       action: 'ToggleActive',
       details: `Chuyển trạng thái ${user.active ? 'Hoạt động' : 'Không hoạt động'}`
@@ -594,7 +606,13 @@ router.patch('/:id/active', async (req, res) => {
 // Lịch sử hoạt động user
 router.get('/:id/activity', async (req, res) => {
   try {
-    const activities = await UserActivity.find({ userId: req.params.id }).sort({ timestamp: -1 }).limit(50);
+    // Hỗ trợ tìm kiếm bằng cả 2 cách (user = _id hoặc userId = user_id)
+    const activities = await UserActivity.find({ 
+      $or: [
+        { user: req.params.id },
+        { userId: req.params.id }
+      ]
+    }).sort({ createdAt: -1 }).limit(50);
     res.json(activities);
   } catch (error) {
     res.status(500).json({ error: error.message });
