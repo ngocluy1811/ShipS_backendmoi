@@ -14,7 +14,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy Python script
-COPY calc_distance.py .
+COPY calc_distance_api.py .
 
 # Start command
-CMD ["python", "calc_distance.py"] 
+CMD ["python", "calc_distance_api.py"] 

@@ -29,6 +29,10 @@ services:
     environment:
       - MONGODB_URI=mongodb+srv://nndminh03:psrMirsKkv19Yia6@ships-cluster.guijyap.mongodb.net/ships_db
       - PYTHONUNBUFFERED=1
+      - FLASK_APP=calc_distance_api.py
+      - FLASK_ENV=production
+    ports:
+      - "5000:5000"
     restart: always
     depends_on:
       - backend
