@@ -47,6 +47,7 @@ module.exports = mongoose;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',')
   : [
@@ -57,8 +58,9 @@ const allowedOrigins = process.env.CORS_ORIGIN
       'http://localhost:3002',
       'https://ships-customermoi.onrender.com'
     ];
+
 app.use(cors({
-  origin: allowedOrigins,
+  origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
