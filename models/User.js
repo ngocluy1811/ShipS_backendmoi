@@ -64,7 +64,8 @@ const userSchema = new mongoose.Schema({
   active_code: { type: String },
   expired_code: { type: Date },
   active_datetime: { type: Date },
-  warehouse_id: { type: String }
+  warehouse_id: { type: String },
+  isLocked: { type: Boolean, default: false }
 }, {
   strict: false,  // Tắt strict mode để tránh lỗi với các field không được định nghĩa
   timestamps: true // Tự động thêm createdAt và updatedAt
