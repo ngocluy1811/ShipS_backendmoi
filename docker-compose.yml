@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - MONGODB_URI=mongodb+srv://nndminh03:psrMirsKkv19Yia6@ships-cluster.guijyap.mongodb.net/ships_db
+      - JWT_SECRET=your_super_secret_jwt_key_2024
+      - CORS_ORIGIN=https://ships-admin.onrender.com
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ships-network
+
+  distance-calculator:
+    build: 
+      context: .
+      dockerfile: Dockerfile.python
+    environment:
+      - MONGODB_URI=mongodb+srv://nndminh03:psrMirsKkv19Yia6@ships-cluster.guijyap.mongodb.net/ships_db
+      - PYTHONUNBUFFERED=1
+    restart: always
+    depends_on:
+      - backend
+    networks:
+      - ships-network
+
+networks:
+  ships-network:
+    driver: bridge
