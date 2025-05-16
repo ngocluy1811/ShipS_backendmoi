@@ -195,6 +195,7 @@ def calc_distance():
         if distance_km is not None:
             return jsonify({'distance_km': round(distance_km, 2), 'fallback': False})
         else:
+            print('Không tìm được route thực tế bằng VietMap!')
             return jsonify({'error': 'Không tìm được route thực tế bằng VietMap!'}), 400
             
     except Exception as e:

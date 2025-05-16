@@ -47,8 +47,18 @@ module.exports = mongoose;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',')
+  : [
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:3002',
+      'https://ships-customermoi.onrender.com'
+    ];
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'],
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -60,7 +70,7 @@ const authenticateToken = (roles) => (req, res, next) => {
   if (!token) {
     return res.status(401).json({ error: 'Không có token.' });
   }
-  jwt.verify(token, 'your_jwt_secret', (err, user) => {
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) {
       return res.status(403).json({ error: 'Token không hợp lệ.' });
     }
