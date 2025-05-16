@@ -6,7 +6,7 @@ const User = require('../models/User');
 const nodemailer = require('nodemailer');
 const UserActivity = require('../models/UserActivity');
 
-// Middleware để xác thực token (copy từ index.js để sử dụng cục bộ)
+// Middleware để xác thực token
 const authenticateToken = (roles) => (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -25,6 +25,7 @@ const authenticateToken = (roles) => (req, res, next) => {
   });
 };
 
+// Cấu hình transporter gửi email
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -32,6 +33,35 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASS
   }
 });
+
+// Hàm gửi email OTP
+const sendOtpEmail = async (email, fullName, otp) => {
+  try {
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Xác thực tài khoản ShipS',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #FF6B00;">Xác thực tài khoản ShipS</h2>
+          <p>Xin chào <strong>${fullName}</strong>,</p>
+          <p>Cảm ơn bạn đã đăng ký tài khoản tại ShipS.</p>
+          <p>Mã xác thực (OTP) của bạn là:</p>
+          <div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 24px; letter-spacing: 5px; margin: 20px 0;">
+            <strong>${otp}</strong>
+          </div>
+          <p>Mã này có hiệu lực trong 15 phút.</p>
+          <p>Nếu bạn không yêu cầu mã này, vui lòng bỏ qua email này.</p>
+          <p>Trân trọng,<br/>Đội ngũ ShipS</p>
+        </div>
+      `
+    });
+    return true;
+  } catch (error) {
+    console.error('Send OTP email error:', error);
+    return false;
+  }
+};
 
 // Lấy danh sách users
 router.get('/', authenticateToken(['admin', 'staff']), async (req, res) => {
@@ -54,12 +84,50 @@ router.get('/', authenticateToken(['admin', 'staff']), async (req, res) => {
 router.post('/register', async (req, res) => {
   try {
     const { email, password, fullName, phoneNumber, address, role, vehicleType, vehicleNumber, citizenId } = req.body;
+    
+    // Kiểm tra thông tin bắt buộc
     if (!email || !password || !fullName || !phoneNumber || !address || !role) {
       return res.status(400).json({ error: 'Vui lòng cung cấp đầy đủ thông tin.' });
     }
 
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
+    // Kiểm tra email đã tồn tại chưa
+    let existingUser = await User.findOne({ email });
+    
+    // Nếu là customer và email đã tồn tại nhưng chưa xác thực
+    if (role === 'customer' && existingUser && !existingUser.isVerified) {
+      // Tạo OTP mới
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 phút
+
+      // Cập nhật thông tin user và OTP mới
+      existingUser.password = await bcrypt.hash(password, 10);
+      existingUser.fullName = fullName;
+      existingUser.phoneNumber = phoneNumber;
+      existingUser.address = address;
+      existingUser.otp = otp;
+      existingUser.otpExpiry = otpExpiry;
+      await existingUser.save();
+
+      // Gửi OTP qua email
+      const emailSent = await sendOtpEmail(email, fullName, otp);
+      if (!emailSent) {
+        return res.status(500).json({ error: 'Không thể gửi email xác thực. Vui lòng thử lại sau.' });
+      }
+
+      await UserActivity.create({
+        userId: existingUser.user_id,
+        action: 'ResendOTP',
+        details: 'Gửi lại mã xác thực cho tài khoản chưa xác thực'
+      });
+
+      return res.json({
+        message: 'Đã gửi lại mã xác thực. Vui lòng kiểm tra email.',
+        email
+      });
+    }
+
+    // Nếu email đã tồn tại và đã xác thực
+    if (existingUser && existingUser.isVerified) {
       return res.status(400).json({ error: 'Email đã được sử dụng.' });
     }
 
@@ -68,6 +136,8 @@ router.post('/register', async (req, res) => {
     if (role === 'customer') {
       // Đăng ký customer: gửi OTP
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 phút
+
       const user = new User({
         user_id: `user_${Date.now()}`,
         email,
@@ -76,33 +146,19 @@ router.post('/register', async (req, res) => {
         phoneNumber,
         address,
         role: 'customer',
-        isVerified: false
+        isVerified: false,
+        otp,
+        otpExpiry
       });
       await user.save();
 
       // Gửi OTP qua email
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: email,
-        subject: 'Xác thực tài khoản ShipS',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #FF6B00;">Xác thực tài khoản ShipS</h2>
-            <p>Xin chào <strong>${fullName}</strong>,</p>
-            <p>Cảm ơn bạn đã đăng ký tài khoản tại ShipS.</p>
-            <p>Mã xác thực (OTP) của bạn là:</p>
-            <div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 24px; letter-spacing: 5px; margin: 20px 0;">
-              <strong>${otp}</strong>
-            </div>
-            <p>Mã này có hiệu lực trong 15 phút.</p>
-            <p>Nếu bạn không yêu cầu mã này, vui lòng bỏ qua email này.</p>
-            <p>Trân trọng,<br/>Đội ngũ ShipS</p>
-          </div>
-        `
-      });
-
-      global._otpMap = global._otpMap || {};
-      global._otpMap[email] = { otp, expiry: Date.now() + 15 * 60 * 1000 };
+      const emailSent = await sendOtpEmail(email, fullName, otp);
+      if (!emailSent) {
+        // Nếu gửi email thất bại, xóa user vừa tạo
+        await User.deleteOne({ _id: user._id });
+        return res.status(500).json({ error: 'Không thể gửi email xác thực. Vui lòng thử lại sau.' });
+      }
 
       await UserActivity.create({
         userId: user.user_id,
@@ -115,7 +171,7 @@ router.post('/register', async (req, res) => {
         email
       });
     } else if (role === 'shipper') {
-      // Đăng ký shipper: active luôn, không cần OTP, lưu thêm thông tin xe và căn cước
+      // Đăng ký shipper: active luôn, không cần OTP
       const user = new User({
         user_id: `user_${Date.now()}`,
         email,
@@ -188,25 +244,25 @@ router.post('/verify-otp', async (req, res) => {
       return res.status(400).json({ error: 'Tài khoản đã được xác thực.' });
     }
 
-    // Lấy OTP từ memory
-    global._otpMap = global._otpMap || {};
-    const otpObj = global._otpMap[email];
-    if (!otpObj) {
+    // Kiểm tra OTP trong DB
+    if (!user.otp || !user.otpExpiry) {
       return res.status(400).json({ error: 'OTP không tồn tại hoặc đã hết hạn.' });
     }
-    if (otpObj.otp !== otp) {
+
+    if (user.otp !== otp) {
       return res.status(400).json({ error: 'Mã OTP không đúng.' });
     }
-    if (otpObj.expiry < Date.now()) {
+
+    if (user.otpExpiry < new Date()) {
       return res.status(400).json({ error: 'Mã OTP đã hết hạn.' });
     }
 
-    // Update user status
+    // Update user status và xóa OTP
     user.isVerified = true;
     user.active = true;
+    user.otp = null;
+    user.otpExpiry = null;
     await user.save();
-    // Xóa OTP khỏi memory
-    delete global._otpMap[email];
 
     await UserActivity.create({
       userId: user.user_id,
@@ -241,28 +297,18 @@ router.post('/resend-otp', async (req, res) => {
 
     // Generate new OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 phút
+
+    // Cập nhật OTP mới vào DB
+    user.otp = otp;
+    user.otpExpiry = otpExpiry;
+    await user.save();
+
     // Gửi OTP qua email
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: 'Mã xác thực mới - ShipS',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #FF6B00;">Mã xác thực mới</h2>
-          <p>Xin chào <strong>${user.fullName}</strong>,</p>
-          <p>Mã xác thực mới của bạn là:</p>
-          <div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 24px; letter-spacing: 5px; margin: 20px 0;">
-            <strong>${otp}</strong>
-          </div>
-          <p>Mã này có hiệu lực trong 15 phút.</p>
-          <p>Nếu bạn không yêu cầu mã này, vui lòng bỏ qua email này.</p>
-          <p>Trân trọng,<br/>Đội ngũ ShipS</p>
-        </div>
-      `
-    });
-    // Lưu OTP tạm thời vào memory
-    global._otpMap = global._otpMap || {};
-    global._otpMap[email] = { otp, expiry: Date.now() + 15 * 60 * 1000 };
+    const emailSent = await sendOtpEmail(email, user.fullName, otp);
+    if (!emailSent) {
+      return res.status(500).json({ error: 'Không thể gửi email xác thực. Vui lòng thử lại sau.' });
+    }
 
     await UserActivity.create({
       userId: user.user_id,
@@ -622,6 +668,7 @@ router.patch('/:id/unlock', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 // controllers/user.controller.js
 router.patch('/:id/verify', async (req, res) => {
   try {
@@ -642,4 +689,5 @@ router.patch('/:id/unverify', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 module.exports = router;
