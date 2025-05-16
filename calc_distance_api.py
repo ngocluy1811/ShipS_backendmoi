@@ -1,3 +1,4 @@
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from geopy.geocoders import Nominatim
@@ -70,19 +71,18 @@ def clean_name(name):
     return name
 
 def build_variants(addr):
+    # addr là chuỗi: 'Phường ..., Quận ..., Thành phố ...'
     # Tách các phần, loại bỏ lặp Việt Nam
     parts = [p.strip() for p in addr.replace('Việt Nam', '').split(',') if p.strip()]
     variants = []
-    # Đầy đủ
-    variants.append(', '.join(parts + ['Việt Nam']))
+    # Đầy đủ (xã/phường, quận/huyện, tỉnh/thành)
+    if len(parts) >= 3:
+        variants.append(', '.join(parts[-3:] + ['Việt Nam']))
     # Bỏ xã/phường
-    if len(parts) > 2:
-        variants.append(', '.join(parts[1:] + ['Việt Nam']))
-    # Chỉ tỉnh/thành, quận/huyện
-    if len(parts) > 1:
+    if len(parts) >= 2:
         variants.append(', '.join(parts[-2:] + ['Việt Nam']))
     # Chỉ tỉnh/thành
-    if len(parts) > 0:
+    if len(parts) >= 1:
         variants.append(parts[-1] + ', Việt Nam')
     return variants
 
@@ -160,6 +160,7 @@ def get_vietmap_matrix_distance(points):
 
 @app.route('/api/calc-distance', methods=['POST'])
 def calc_distance():
+    print('DATA:', request.json)
     try:
         data = request.json
         sender = data['sender'][0] if isinstance(data['sender'], list) else data['sender']
@@ -175,32 +176,51 @@ def calc_distance():
         receiver_locs = try_geocode_variants(receiver_variants)
 
         if not sender_locs or not receiver_locs:
-            print("Không tìm được tọa độ cho sender hoặc receiver.")
-            return jsonify({'error': 'Không tìm được tọa độ cho địa chỉ gửi hoặc nhận!'}), 400
+            print("Không tìm được tọa độ cho sender hoặc receiver. Fallback mặc định!")
+            # Fallback: Hà Nội <-> TP.HCM
+            fallback_coords = {
+                'Hà Nội': (21.028511, 105.804817),
+                'TP. Hồ Chí Minh': (10.776889, 106.700806)
+            }
+            s = fallback_coords['TP. Hồ Chí Minh']
+            r = fallback_coords['Hà Nội']
+            distance_km = geodesic(s, r).km
+            return jsonify({'distance_km': round(distance_km, 2), 'fallback': True, 'note': 'Fallback Hà Nội - TP.HCM'})
 
         # Chỉ lấy cặp chi tiết nhất
         s = sender_locs[0]
         r = receiver_locs[0]
-        
         # Try Matrix API first
         points = [(s.latitude, s.longitude), (r.latitude, r.longitude)]
         distances = get_vietmap_matrix_distance(points)
-        
         if distances and len(distances) > 0:
             distance_km = distances[0]  # First distance is from source to first destination
             return jsonify({'distance_km': round(distance_km, 2), 'fallback': False})
-            
         # Fallback to Route API if Matrix fails
         distance_km = get_vietmap_route_distance(s.latitude, s.longitude, r.latitude, r.longitude)
         if distance_km is not None:
             return jsonify({'distance_km': round(distance_km, 2), 'fallback': False})
         else:
-            print('Không tìm được route thực tế bằng VietMap!')
-            return jsonify({'error': 'Không tìm được route thực tế bằng VietMap!'}), 400
-            
+            print('Không tìm được route thực tế bằng VietMap! Fallback Hà Nội - TP.HCM')
+            fallback_coords = {
+                'Hà Nội': (21.028511, 105.804817),
+                'TP. Hồ Chí Minh': (10.776889, 106.700806)
+            }
+            s = fallback_coords['TP. Hồ Chí Minh']
+            r = fallback_coords['Hà Nội']
+            distance_km = geodesic(s, r).km
+            return jsonify({'distance_km': round(distance_km, 2), 'fallback': True, 'note': 'Fallback Hà Nội - TP.HCM'})
     except Exception as e:
         print(f"Lỗi server: {e}")
-        return jsonify({'error': f'Lỗi server: {str(e)}'}), 500
+        # Fallback cuối cùng
+        fallback_coords = {
+            'Hà Nội': (21.028511, 105.804817),
+            'TP. Hồ Chí Minh': (10.776889, 106.700806)
+        }
+        s = fallback_coords['TP. Hồ Chí Minh']
+        r = fallback_coords['Hà Nội']
+        distance_km = geodesic(s, r).km
+        return jsonify({'distance_km': round(distance_km, 2), 'fallback': True, 'note': 'Fallback Hà Nội - TP.HCM', 'error': str(e)}), 200
 
 if __name__ == '__main__':
     app.run(port=5001) 
