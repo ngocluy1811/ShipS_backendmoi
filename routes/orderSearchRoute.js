@@ -9,7 +9,6 @@ router.get('/', async (req, res) => {
     const q = req.query.q;
     if (!q) return res.json([]);
     const regex = new RegExp(q, 'i');
-    
     // Tạo filter cơ bản
     const filter = {
       $or: [
@@ -28,14 +27,11 @@ router.get('/', async (req, res) => {
         { 'delivery_address.city': regex }
       ]
     };
-
-   // Thêm điều kiện lọc theo customer_id nếu có
-// Thêm điều kiện lọc theo user_id nếu có
-if (req.query.customer_id) {
-  filter.customer_id = req.query.customer_id;
-}
+    // Thêm điều kiện lọc theo customer_id nếu có
+    if (req.query.customer_id) {
+      filter.customer_id = req.query.customer_id;
+    }
     const orders = await Order.find(filter).limit(10);
-    
     // Format kết quả trả về để FE dễ hiển thị
     const formatted = orders.map(order => ({
       order_id: order.order_id,

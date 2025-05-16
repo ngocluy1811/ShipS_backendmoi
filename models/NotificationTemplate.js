@@ -11,4 +11,5 @@ const notificationTemplateSchema = new mongoose.Schema({
   updated_at: { type: Date, default: Date.now }
 });
 
-module.exports = mongoose.model('NotificationTemplate', notificationTemplateSchema); 
+module.exports = mongoose.models.NotificationTemplate || mongoose.model('NotificationTemplate', notificationTemplateSchema); 
+

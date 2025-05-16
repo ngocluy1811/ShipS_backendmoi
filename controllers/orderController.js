@@ -502,12 +502,12 @@ const getOrderById = async (req, res) => {
     const query = { order_id };
     if (req.user.role === 'customer') {
       query.customer_id = req.user.user_id;
-    } else if (req.user.role !== 'admin' && req.user.role !== 'staff') {
+    } else if (req.user.role !== 'admin' && req.user.role !== 'staff' && req.user.role !== 'shipper') {
       return res.status(403).json({ error: 'Không có quyền truy cập.' });
     }
     const order = await Order.findOne(query).lean();
     if (!order) {
-      return res.status(404).json({ error: 'Đơn hàng không tồn tại.' });
+      return res.status(404).json({ error: 'Đơn hàng không tồn tại hoặc bạn không có quyền xem.' });
     }
 
     // Đảm bảo cost_details luôn có format chuẩn và đủ trường
@@ -782,18 +782,27 @@ router.put('/:order_id/status', async (req, res) => {
   }
 });
 
-router.post('/:order_id/assign-shipper', async (req, res) => {
+const assignShipperToOrder = async (req, res) => {
   try {
     const { order_id } = req.params;
     const { shipper_id } = req.body;
 
-    if (!['admin', 'staff'].includes(req.user.role)) {
+    if (!['admin', 'staff', 'shipper'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Không có quyền gán shipper cho đơn hàng.' });
     }
 
     const order = await Order.findOne({ order_id });
     if (!order) {
       return res.status(404).json({ error: 'Đơn hàng không tồn tại.' });
+    }
+
+    if (req.user.role === 'shipper') {
+      if (order.shipper_id) {
+        return res.status(400).json({ error: 'Đơn hàng đã có shipper.' });
+      }
+      if (req.user.user_id !== shipper_id) {
+        return res.status(403).json({ error: 'Shipper chỉ được gán chính mình vào đơn hàng.' });
+      }
     }
 
     const shipper = await User.findOne({ user_id: shipper_id, role: 'shipper' });
@@ -806,15 +815,17 @@ router.post('/:order_id/assign-shipper', async (req, res) => {
     }
 
     order.shipper_id = shipper_id;
+    order.status = 'delivering';
     await order.save();
 
     res.json({ message: 'Gán shipper vào đơn hàng thành công.' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+};
 
 module.exports = {
   getOrderById,
-  updateOrder
+  updateOrder,
+  assignShipperToOrder
 };

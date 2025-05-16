@@ -6,7 +6,7 @@ const UserAddress = require('../models/UserAddress');
 const OrderItem = require('../models/OrderItem');
 const Coupon = require('../models/Coupon');
 const User = require('../models/User');
-const { getOrderById, updateOrder } = require('../controllers/orderController');
+const { getOrderById, updateOrder, assignShipperToOrder } = require('../controllers/orderController');
 const requireAuth = require('../middleware/authenticateToken');
 const { emitOrderClaimed } = require('../socket');
 router.post('/', async (req, res) => {
@@ -196,7 +196,7 @@ router.post('/', async (req, res) => {
 
 router.get('/', async (req, res) => {
   try {
-    const { customer_id, shipper_id } = req.query;
+    const { customer_id, shipper_id, status } = req.query;
     const query = {};
     if (req.user.role === 'customer') {
       query.customer_id = req.user.user_id;
@@ -213,6 +213,9 @@ router.get('/', async (req, res) => {
       }
       query.shipper_id = shipper_id;
       query.warehouse_id = shipper.warehouse_id;
+    }
+    if (status) {
+      query.status = status;
     }
     const orders = await Order.find(query);
     res.json(orders);
@@ -463,6 +466,9 @@ router.get('/search', async (req, res) => {
   }
 });
 
+
+router.post('/:order_id/assign-shipper', requireAuth(['admin', 'staff', 'shipper']), assignShipperToOrder);
+
 // Thống kê số lượng đơn hàng theo tháng trong năm hiện tại
 router.get('/stats-by-month', async (req, res) => {
   try {
@@ -486,5 +492,6 @@ router.get('/stats-by-month', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 
 module.exports = router;
