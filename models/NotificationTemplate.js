@@ -1,17 +1,5 @@
 const mongoose = require('mongoose');
 
-
-const NotificationTemplateSchema = new mongoose.Schema({
-  name: { type: String, required: true, unique: true },
-  title: { type: String, required: true },
-  body: { type: String, required: true },
-  type: { type: String, required: true },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
-});
-
-module.exports = mongoose.model('NotificationTemplate', NotificationTemplateSchema); 
-
 const notificationTemplateSchema = new mongoose.Schema({
   template_id: { type: String, required: true, unique: true },
   title: { type: String, required: true },
@@ -23,5 +11,5 @@ const notificationTemplateSchema = new mongoose.Schema({
   updated_at: { type: Date, default: Date.now }
 });
 
-module.exports = mongoose.model('NotificationTemplate', notificationTemplateSchema); 
+module.exports = mongoose.models.NotificationTemplate || mongoose.model('NotificationTemplate', notificationTemplateSchema); 
 
