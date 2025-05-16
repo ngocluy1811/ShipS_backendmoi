@@ -502,9 +502,7 @@ const getOrderById = async (req, res) => {
     const query = { order_id };
     if (req.user.role === 'customer') {
       query.customer_id = req.user.user_id;
-    } else if (req.user.role === 'shipper') {
-      query.shipper_id = req.user.user_id;
-    } else if (req.user.role !== 'admin' && req.user.role !== 'staff') {
+    } else if (req.user.role !== 'admin' && req.user.role !== 'staff' && req.user.role !== 'shipper') {
       return res.status(403).json({ error: 'Không có quyền truy cập.' });
     }
     const order = await Order.findOne(query).lean();

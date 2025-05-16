@@ -1,5 +1,4 @@
 const express = require('express');
-
 const router = express.Router();
 const axios = require('axios');
 
@@ -69,9 +68,7 @@ router.get('/directions', async (req, res) => {
         console.error('Error getting directions:', error);
         res.status(500).json({ error: 'Failed to get directions' });
     }
-
-const axios = require('axios');
-const router = express.Router();
+});
 
 const VIETMAP_API_KEY = process.env.VIETMAP_API_KEY || '7f9ef35866466886ebd24ba5091eda803732c8c76cde1b4a';
 
@@ -113,7 +110,6 @@ router.get('/place', async (req, res) => {
     console.error('VietMap Place error:', err.message);
     res.status(500).json({ error: 'VietMap Place error', detail: err.message });
   }
-
 });
 
 module.exports = router;
