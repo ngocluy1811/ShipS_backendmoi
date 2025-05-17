@@ -13,7 +13,7 @@ services:
       - key: JWT_SECRET
         value: your_super_secret_jwt_key_2024
       - key: CORS_ORIGIN
-        value: https://ships-customermoi.onrender.com
+        value: https://ships-customermoi.onrender.com,https://ships-customermoinhat.onrender.com
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: FLASK_APP

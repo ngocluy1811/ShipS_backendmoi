@@ -55,7 +55,8 @@ const allowedOrigins = process.env.CORS_ORIGIN
       'http://localhost:3000',
       'http://localhost:3001',
       'http://localhost:3002',
-      'https://ships-customermoi.onrender.com'
+      'https://ships-customermoi.onrender.com',
+      'https://ships-customermoinhat.onrender.com'
     ];
 app.use(cors({
   origin: allowedOrigins,
